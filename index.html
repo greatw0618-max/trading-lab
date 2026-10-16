@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>매매연구소</title>
+<meta name="description" content="차트를 엘리엇·ICT·와이코프·다이버전스로 판독하고 하이퍼리퀴드 고래를 추적합니다">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="name">매매연구소</span></div>
+    <nav class="tabs" aria-label="화면 전환">
+      <a href="#trade" id="nav-trade" aria-current="page">매매 분석</a>
+      <a href="#flow" id="nav-flow">시장 수급</a>
+      <a href="#whale" id="nav-whale">고래 추적</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="stxt">불러오는 중…</span></div>
+    <button class="btn" id="theme" type="button">테마 전환</button>
+  </div>
+  <div class="tape" aria-label="실시간 시세 (하이퍼리퀴드)"><div class="tape-in" id="tape"></div></div>
+</header>
+
+<div class="wrap" id="tab-trade">
+  <div class="banner" id="banner" hidden></div>
+
+  <section class="cards" id="cards" aria-label="실시간 신호"></section>
+
+  <div class="work">
+    <section class="panel" aria-label="차트">
+      <div class="controls">
+        <div class="seg" id="symSeg" role="group" aria-label="종목">
+          <button data-v="SOXL">SOXL</button><button data-v="KORU">KORU</button><button data-v="SOXX" title="SOXL의 기초지수 · 반도체 1배 ETF">SOXX <small>반도체 1배</small></button><button data-v="EWY" title="KORU의 기초지수 · 한국 1배 ETF">EWY <small>한국 1배</small></button>
+        </div>
+        <div class="seg" id="coinSeg" role="group" aria-label="코인">
+          <button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="HYPE">HYPE</button>
+        </div>
+        <form class="search" id="symForm" role="search">
+          <input id="symIn" list="symList" placeholder="종목 검색 (XRP, DOGE, TSLA…)" aria-label="하이퍼리퀴드 종목 검색" autocomplete="off" spellcheck="false">
+          <button class="btn" type="submit">보기</button>
+        </form>
+        <datalist id="symList"></datalist>
+        <div class="seg" id="tfSeg" role="group" aria-label="봉 주기">
+          <button data-v="15m">15분</button><button data-v="1h">1시간</button><button data-v="4h">4시간</button><button data-v="1d">일봉</button>
+        </div>
+        <div class="seg" id="srcSeg" role="group" aria-label="데이터">
+          <button data-v="hl">하이퍼리퀴드 24시간</button><button data-v="yahoo">미국 정규장</button>
+        </div>
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="t-ew"><span class="sw" style="background:var(--wave)"></span>엘리엇 파동</label>
+        <label><input type="checkbox" id="t-ict"><span class="sw" style="background:var(--ema1)"></span>ICT (FVG·오더블록·구조)</label>
+        <label><input type="checkbox" id="t-wy"><span class="sw" style="background:var(--zone-wy);outline:1px solid var(--wave)"></span>와이코프 박스</label>
+        <label><input type="checkbox" id="t-div"><span class="sw" style="background:linear-gradient(90deg,var(--up) 50%,var(--down) 50%)"></span>다이버전스</label>
+        <label><input type="checkbox" id="t-tr"><span class="sw" style="background:var(--accent)"></span>진입·목표·손절 선</label>
+        <label><input type="checkbox" id="t-e10"><span class="sw" style="background:var(--e10)"></span>EMA 10</label>
+        <label><input type="checkbox" id="t-e20"><span class="sw" style="background:var(--e20)"></span>EMA 20</label>
+        <label><input type="checkbox" id="t-e60"><span class="sw" style="background:var(--e60)"></span>EMA 60</label>
+        <label><input type="checkbox" id="t-e120"><span class="sw" style="background:var(--e120)"></span>EMA 120</label>
+      </div>
+      <div class="pane"><div class="legend" id="legend"></div><div id="cMain"></div><canvas class="overlay" id="ov"></canvas></div>
+      <div class="pane"><div class="plabel" id="lRsi">RSI 14</div><div id="cRsi"></div></div>
+      <div class="src-note" id="srcNote"></div>
+    </section>
+
+    <aside class="panel explain" aria-label="차트 해설" id="explain">
+      <div class="verdict"><div class="head"><span class="muted">불러오는 중…</span></div></div>
+    </aside>
+  </div>
+
+  <section class="panel" id="chat" aria-label="분석법 질문하기">
+    <div class="ph"><h2>분석법 질문하기</h2>
+      <span class="ph-right"><small id="chatCost"></small><button type="button" class="btn" id="chatClear">대화 지우기</button><button type="button" class="btn" id="chatKeyBtn">연결 설정</button></span>
+    </div>
+    <div class="chat-menu">
+      <span class="muted">분석법</span>
+      <div class="mchips" id="chatMethods" role="group" aria-label="질문할 분석법">
+        <label class="mchip"><input type="checkbox" value="ict"><span>ICT</span></label>
+        <label class="mchip"><input type="checkbox" value="elliott"><span>엘리엇 파동</span></label>
+        <label class="mchip"><input type="checkbox" value="wyckoff"><span>와이코프</span></label>
+        <label class="mchip"><input type="checkbox" value="divergence"><span>다이버전스</span></label>
+      </div>
+      <label class="ctxopt"><input type="checkbox" id="chatCtx" checked> 지금 보는 차트의 분석 결과를 함께 보내기</label>
+    </div>
+    <div class="chat-key" id="chatKey" hidden>
+      <div class="seg" id="chatMode" role="group" aria-label="답변 방식">
+        <button type="button" data-v="free">무료 · 내 Claude 구독 (이 PC)</button><button type="button" data-v="api">API 키 (유료)</button>
+      </div>
+      <div id="chatFree">
+        <p class="note">이 PC에 설치된 Claude Code가 지금 쓰시는 Claude 구독으로 답합니다. API 요금은 없고, Claude 플랜의 사용 한도 안에서 쓰입니다. <b>start-local.bat</b>으로 연 대시보드에서만 작동합니다.</p>
+        <p class="note" id="chatFreeState">상태 확인 중…</p>
+        <div class="inrow"><button type="button" class="btn primary" id="chatLogin" hidden>Claude 로그인 창 열기</button><button type="button" class="btn" id="chatRecheck">상태 다시 확인</button></div>
+      </div>
+      <form id="chatApi" hidden>
+        <p class="note"><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>에서 발급받은 API 키를 붙여 넣으세요. 키는 이 브라우저에만 저장되고 Anthropic 외의 곳으로는 보내지 않습니다. 사용료는 질문 한 번에 대략 $0.02~0.06이 따로 청구됩니다.</p>
+        <div class="inrow">
+          <input id="chatKeyIn" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-로 시작하는 키" aria-label="Anthropic API 키">
+          <button type="submit" class="btn primary">저장</button>
+          <button type="button" class="btn" id="chatKeyDel">키 삭제</button>
+        </div>
+        <p class="note" id="chatKeyState"></p>
+      </form>
+    </div>
+    <div class="chat-log" id="chatLog" aria-live="polite"></div>
+    <div class="chat-sugg" id="chatSugg"></div>
+    <form class="chat-form" id="chatForm">
+      <textarea id="chatIn" rows="2" placeholder="궁금한 걸 물어보세요. Enter로 보내기, Shift+Enter로 줄바꿈" aria-label="질문"></textarea>
+      <button type="submit" class="btn primary" id="chatSend">보내기</button>
+    </form>
+  </section>
+
+  <section class="panel" id="plan">
+    <div class="ph"><h2>예상 투자 결과</h2>
+      <span class="ph-right"><small id="planCtx">지금 보고 있는 차트 기준으로 계산합니다</small><button type="button" class="btn" id="pReset" title="입력값을 처음 상태로 되돌립니다">초기화</button></span>
+    </div>
+    <form class="params" id="planForm">
+      <div class="field"><span>방향</span>
+        <div class="seg" id="pDir" role="group" aria-label="방향"><button type="button" data-v="1">롱 (오른다)</button><button type="button" data-v="-1">숏 (내린다)</button></div>
+      </div>
+      <label>진입가
+        <span class="inrow"><input id="pEntry" type="number" step="any" min="0" placeholder="가격 입력"><button type="button" class="btn" id="pNow">현재가</button></span>
+      </label>
+      <label>목표 수익 (%)<input id="pTp" type="number" step="0.1" min="0.1" value="2" placeholder="예: 2"></label>
+      <label>손절 (%, 0 = 안 함)<input id="pSl" type="number" step="0.5" min="0" value="0" placeholder="0"></label>
+      <label>최대 보유 기간<select id="pHold"><option value="4">4시간</option><option value="24" selected>1일</option><option value="72">3일</option><option value="168">1주</option></select></label>
+      <label>투자금 (USD, 선택)<input id="pAmt" type="number" min="0" step="any" placeholder="예: 1000"></label>
+      <label>레버리지 (배)<input id="pLev" type="number" min="1" max="50" step="1" value="1" placeholder="1"></label>
+    </form>
+    <div id="planOut"><div class="pb"><p class="note">차트를 불러오는 중…</p></div></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><h2>방향성 점검표</h2><small>짧은 봉과 큰 봉의 흐름이 같은 방향인지 봉 주기별로 확인</small></div>
+    <div class="tblwrap"><table id="mtf"><thead><tr><th>종목 · 봉</th><th>추세 (EMA)</th><th>ICT 구조</th><th>엘리엇 (가장 유력한 카운트)</th><th>와이코프</th><th>다이버전스</th><th class="r">RSI 14</th></tr></thead><tbody></tbody></table></div>
+    <div class="pb"><p class="note" id="mtfNote"></p></div>
+  </section>
+
+  <footer>
+    <span>데이터: 하이퍼리퀴드 공개 API (실시간) · 야후 파이낸스 정규장 데이터 (GitHub Actions가 장중 30분마다 갱신). 차트 시간은 이 기기의 현지 시간입니다.</span>
+    <span>엘리엇·와이코프·ICT 판독은 정해진 계산 규칙으로 만든 추정이며, 매매 판단은 본인 책임입니다. 투자 조언이 아닙니다.</span>
+  </footer>
+</div>
+
+<div class="wrap" id="tab-flow" hidden>
+  <section class="panel">
+    <div class="ph"><h2>시장 수급</h2><small>OI·시장가 매수/매도·프리미엄·펀딩·롱 비중으로 누가 사고 누가 파는지 보기 · 마우스를 올리면 그 봉 설명 · 8칸이 함께 움직입니다</small></div>
+    <div class="controls">
+      <div class="seg" id="flowCoin" role="group" aria-label="코인">
+        <button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="XRP">XRP</button><button data-v="DOGE">DOGE</button><button data-v="HYPE">HYPE</button>
+      </div>
+      <form class="search" id="flowForm" role="search">
+        <input id="flowIn" placeholder="다른 코인 (예: LINK)" aria-label="코인 이름" autocomplete="off" spellcheck="false">
+        <button class="btn" type="submit">보기</button>
+      </form>
+      <div class="seg" id="flowIv" role="group" aria-label="봉 주기">
+        <button data-v="5m">5분</button><button data-v="15m">15분</button><button data-v="1h">1시간</button><button data-v="4h">4시간</button><button data-v="1d">1일</button>
+      </div>
+      <span class="muted" id="flowStatus" style="font-size:12.5px"></span>
+    </div>
+    <div class="flow-hover" id="flowHover"></div>
+    <div id="flowPanes"></div>
+    <div class="flow-sum" id="flowSum"></div>
+  </section>
+  <footer>
+    <span>데이터: 바이낸스 선물·현물·코인 마진, 바이비트, 코인베이스 공개 API(브라우저에서 바로), OKX 공개 통계(start-local.bat 서버를 거쳐). 30초마다 갱신.</span>
+    <span>CVD = 시장가 매수량 − 시장가 매도량의 누적(코인 수량). OI = 미결제약정(달러). 코인베이스 프리미엄 = 코인베이스 BTC-USD − 바이낸스 BTC-USDT 현물 가격. 바이비트는 시장가 매수·매도 구분 데이터를 공개하지 않아 CVD에서 빠집니다.</span>
+  </footer>
+</div>
+
+<div class="wrap" id="tab-whale" hidden>
+  <section class="panel">
+    <div class="ph"><h2>추적 지갑</h2><small>하이퍼리퀴드는 모든 포지션이 블록체인에 공개됩니다 · 30초마다 갱신</small></div>
+    <form class="addform" id="addForm">
+      <input name="addr" id="w-addr" placeholder="지갑 주소 0x…" autocomplete="off" spellcheck="false" aria-label="지갑 주소">
+      <input name="label" id="w-label" placeholder="이름 (선택)" aria-label="이름">
+      <button class="btn primary" type="submit">추가</button>
+    </form>
+    <div class="wallets" id="wallets"></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><h2>상위 트레이더 포지션 집계</h2><small id="aggNote">리더보드 상위 트레이더들이 지금 어느 쪽에 돈을 걸었는지</small></div>
+    <div class="controls">
+      <div class="seg" id="lbSeg" role="group" aria-label="기준">
+        <button data-v="mPnl">이번 달 수익 상위</button><button data-v="aPnl">누적 수익 상위</button><button data-v="av">계좌 규모 상위</button>
+      </div>
+      <div class="seg" id="lbN" role="group" aria-label="인원">
+        <button data-v="20">20명</button><button data-v="40">40명</button><button data-v="80">80명</button>
+      </div>
+      <button class="btn" id="aggRefresh" type="button">다시 불러오기</button>
+    </div>
+    <div class="tblwrap"><table id="agg"><thead><tr><th>코인</th><th class="r">롱 합계</th><th class="r">숏 합계</th><th>롱 : 숏</th><th class="r">순포지션</th><th class="r">롱/숏 인원</th><th class="r">가격</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><h2>청산 구간 맵</h2><small id="liqNote">집계된 포지션의 청산 가격 분포 · 코인을 고르면 바뀝니다</small></div>
+    <div class="controls"><label class="muted" for="liqCoin">코인</label><select id="liqCoin" class="btn"></select></div>
+    <div class="liq" id="liq"></div>
+  </section>
+
+  <section class="panel">
+    <div class="ph"><h2>리더보드</h2><small id="lbUpdated"></small></div>
+    <div class="tblwrap"><table id="lb"><thead><tr><th>트레이더</th><th class="r">계좌</th><th class="r">오늘</th><th class="r">이번 주</th><th class="r">이번 달</th><th class="r">누적 수익</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+  <footer><span>포지션 데이터: 하이퍼리퀴드 공개 API. 리더보드: stats-data.hyperliquid.xyz (하루 여러 번 갱신). 고래의 포지션은 참고 정보일 뿐, 따라 하는 것을 권하지 않습니다.</span></footer>
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="js/indicators.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/strategy.js"></script>
+<script src="js/data.js"></script>
+<script src="js/main.js"></script>
+<script src="js/whales.js"></script>
+<script src="js/flow.js"></script>
+<script type="module" src="js/chat.js"></script>
+</body>
+</html>
