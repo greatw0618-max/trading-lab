@@ -184,6 +184,13 @@ while ($l.IsListening) {
           $list = @($list | Where-Object { $_.id -ne $id }) + @([pscustomobject]$entry)
           $json = ConvertTo-Json -InputObject ([ordered]@{ reports = @($list | Sort-Object id -Descending) }) -Depth 5 -Compress
           [IO.File]::WriteAllText($idxFile, $json, (New-Object Text.UTF8Encoding $false))
+          # Upload the report to GitHub in the background so the online dashboard (GitHub Pages) shows it too.
+          if ($git -and (Test-Path (Join-Path $Root '.git'))) {
+            $g = $git.Source
+            # A named mutex keeps several uploads (e.g. many results scored at once) from running git at the same time.
+            $cmd = "`$m = New-Object Threading.Mutex(`$false, 'MaemaeLabReportGit'); [void]`$m.WaitOne(); try { & '$g' -C '$Root' add -- reports/$id.json reports/index.json; & '$g' -C '$Root' commit -q -m 'Save report $id' -- reports/$id.json reports/index.json; & '$g' -C '$Root' pull --rebase --autostash -q origin main; & '$g' -C '$Root' push -q origin main } finally { `$m.ReleaseMutex() }"
+            Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', $cmd
+          }
           Send-Text $ctx 200 'application/json; charset=utf-8' '{"saved":true}'
         } catch { Send-Text $ctx 500 'text/plain; charset=utf-8' ('save failed: ' + $_.Exception.Message) }
         continue
