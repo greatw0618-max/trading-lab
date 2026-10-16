@@ -2,7 +2,7 @@
 # Also relays chat questions to the local Claude Code CLI (your Claude subscription, no API key),
 # with every Claude Code tool disabled so it can only write text answers.
 # Close this window (or press Ctrl+C) to stop the server.
-param([int]$Port = 8765)
+param([int]$Port = 8765, [switch]$NoBrowser)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Origin = "http://localhost:$Port"
@@ -93,7 +93,7 @@ $statusCache = $null; $statusAt = [datetime]::MinValue
 Write-Host "Dashboard running: $Origin/"
 if ($Claude) { Write-Host "Chat: using Claude Code at $Claude" } else { Write-Host "Chat: Claude Code not found (free chat mode unavailable)" }
 Write-Host "Keep this window open while you use it. Close it to stop."
-Start-Process "$Origin/"
+if (-not $NoBrowser) { Start-Process "$Origin/" }
 
 # Pull the data that GitHub Actions refreshes (stock bars, leaderboard) at most every 30 minutes,
 # so the local dashboard is as fresh as the GitHub Pages one. Skipped quietly if git or the remote is unavailable.
