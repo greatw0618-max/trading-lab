@@ -95,8 +95,19 @@ if ($Claude) { Write-Host "Chat: using Claude Code at $Claude" } else { Write-Ho
 Write-Host "Keep this window open while you use it. Close it to stop."
 Start-Process "$Origin/"
 
+# Pull the data that GitHub Actions refreshes (stock bars, leaderboard) at most every 30 minutes,
+# so the local dashboard is as fresh as the GitHub Pages one. Skipped quietly if git or the remote is unavailable.
+$git = Get-Command git -ErrorAction SilentlyContinue
+$lastPull = [datetime]::MinValue
+function Update-FromGitHub {
+  if (-not $git -or -not (Test-Path (Join-Path $Root '.git'))) { return }
+  try { & $git.Source -C $Root pull --ff-only --quiet 2>$null | Out-Null; Write-Host ("Data synced from GitHub at " + (Get-Date -Format 'HH:mm')) } catch {}
+}
+Update-FromGitHub; $lastPull = Get-Date
+
 while ($l.IsListening) {
   $ctx = $l.GetContext()
+  if (((Get-Date) - $lastPull).TotalMinutes -ge 30) { $lastPull = Get-Date; Update-FromGitHub }
   # Clean up finished chat jobs
   for ($k = $jobs.Count - 1; $k -ge 0; $k--) { if ($jobs[$k].h.IsCompleted) { try { $jobs[$k].ps.EndInvoke($jobs[$k].h) } catch {}; $jobs[$k].ps.Dispose(); $jobs.RemoveAt($k) } }
   try {
