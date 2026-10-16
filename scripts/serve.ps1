@@ -137,6 +137,16 @@ while ($l.IsListening) {
         } catch { Send-Text $ctx 502 'text/plain; charset=utf-8' 'okx unavailable' }
         continue
       }
+      if ($path -eq 'api/proxy/bitfinex') {
+        # Bitfinex public trade history has no CORS either; only the read-only trades history path is allowed.
+        $q = [string]$ctx.Request.QueryString['path']
+        if (-not ($q -match '^/v2/trades/t[A-Z0-9:]+/hist(\?[A-Za-z0-9=&_\-\.]*)?$')) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'path not allowed'; continue }
+        try {
+          $wc = New-Object Net.WebClient; $wc.Encoding = [Text.Encoding]::UTF8; $wc.Headers.Add('User-Agent', 'Mozilla/5.0')
+          Send-Text $ctx 200 'application/json; charset=utf-8' ($wc.DownloadString('https://api-pub.bitfinex.com' + $q))
+        } catch { Send-Text $ctx 502 'text/plain; charset=utf-8' 'bitfinex unavailable' }
+        continue
+      }
       if ($path -eq 'api/version') {
         # Newest change time of the page files, so open pages can reload themselves after an update.
         $files = @(Get-Item (Join-Path $Root 'index.html')) + @(Get-ChildItem (Join-Path $Root 'js'), (Join-Path $Root 'css') -File)

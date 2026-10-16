@@ -339,7 +339,7 @@
     const inSeg = $$('#flowCoin button').some(b => b.dataset.v === F.coin);
     if (document.activeElement !== $('#flowIn')) $('#flowIn').value = inSeg ? '' : F.coin;
   }
-  function setCoin(c) { c = c.trim().toUpperCase().replace(/USDT$/, ''); if (!/^[A-Z0-9]{2,15}$/.test(c) || c === F.coin) return; F.coin = c; store.set('flowCoin', c); load(); }
+  function setCoin(c) { c = c.trim().toUpperCase().replace(/USDT$/, ''); if (!/^[A-Z0-9]{2,15}$/.test(c) || c === F.coin) return; F.coin = c; store.set('flowCoin', c); load(); window.dispatchEvent(new CustomEvent('flowcoin', { detail: c })); }
   $('#flowCoin').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setCoin(b.dataset.v); });
   $('#flowIv').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.dataset.v === F.iv) return; F.iv = b.dataset.v; store.set('flowIv', F.iv); load(); });
   $('#flowForm').addEventListener('submit', e => { e.preventDefault(); setCoin($('#flowIn').value); });

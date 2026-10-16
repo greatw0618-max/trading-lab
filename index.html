@@ -166,6 +166,31 @@
     <div id="flowPanes"></div>
     <div class="flow-sum" id="flowSum"></div>
   </section>
+
+  <section class="panel" id="xcvd" aria-label="거래소별 시장가">
+    <div class="ph"><h2>거래소별 시장가 매수</h2>
+      <span class="ph-right"><small id="xcSince"></small>
+        <span class="seg" id="xcWin" role="group" aria-label="기간"><button data-v="15m">15분</button><button data-v="1h">1시간</button><button data-v="4h">4시간</button><button data-v="1d">1일</button></span>
+      </span>
+    </div>
+    <div class="xgrid">
+      <div class="xcol">
+        <div class="xhead"><b>현물 · 거래소별 CVD</b><small class="muted">이름을 누르면 선을 켜고 꺼요</small></div>
+        <div class="xlegend" id="xl-spot"></div>
+        <div class="xchart" id="xc-spot"></div>
+        <div class="xhead"><b>현물 순매수</b><small id="xt-spot"></small></div>
+        <div class="xbars" id="xb-spot"></div>
+      </div>
+      <div class="xcol">
+        <div class="xhead"><b>선물 · 거래소별 CVD</b><small class="muted">이름을 누르면 선을 켜고 꺼요</small></div>
+        <div class="xlegend" id="xl-fut"></div>
+        <div class="xchart" id="xc-fut"></div>
+        <div class="xhead"><b>선물 순매수</b><small id="xt-fut"></small></div>
+        <div class="xbars" id="xb-fut"></div>
+      </div>
+    </div>
+    <p class="note pb" id="xcSrc"></p>
+  </section>
   <footer>
     <span>데이터: 바이낸스 선물·현물·코인 마진, 바이비트, 코인베이스 공개 API(브라우저에서 바로), OKX 공개 통계(start-local.bat 서버를 거쳐). 30초마다 갱신.</span>
     <span>CVD = 시장가 매수량 − 시장가 매도량의 누적(코인 수량). OI = 미결제약정(달러). 코인베이스 프리미엄 = 코인베이스 BTC-USD − 바이낸스 BTC-USDT 현물 가격. 바이비트는 시장가 매수·매도 구분 데이터를 공개하지 않아 CVD에서 빠집니다.</span>
@@ -218,6 +243,7 @@
 <script src="js/main.js"></script>
 <script src="js/whales.js"></script>
 <script src="js/flow.js"></script>
+<script src="js/cvdx.js"></script>
 <script type="module" src="js/chat.js"></script>
 </body>
 </html>

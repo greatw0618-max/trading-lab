@@ -197,6 +197,29 @@ tr.hl td { background: var(--accent-soft); }
 .srow > div { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
 .srow .vlist { width: 100%; }
 
+/* 거래소별 시장가 매수 */
+.xgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.xcol { min-width: 0; display: grid; align-content: start; }
+.xcol + .xcol { border-left: 1px solid var(--line); }
+@media (max-width: 900px) { .xgrid { grid-template-columns: minmax(0, 1fr); } .xcol + .xcol { border-left: 0; border-top: 1px solid var(--line); } }
+.xhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 10px; padding: 10px 16px 6px; font-size: 12.8px; }
+.xhead b { font-weight: 800; }
+.xhead small { font-size: 12px; }
+.xlegend { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 0 16px 8px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.xleg { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 2px 0; cursor: pointer; color: var(--fg); font: inherit; }
+.xleg i { width: 12px; height: 3px; display: inline-block; }
+.xleg.off { opacity: .35; }
+.xleg.off b { text-decoration: line-through; }
+.xchart { height: 260px; border-top: 1px solid var(--grid); border-bottom: 1px solid var(--line); }
+.xbars { display: grid; padding: 4px 16px 12px; }
+.xrow { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr) 104px; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 12.8px; }
+.xrow:last-child { border-bottom: 0; }
+.xn { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; }
+.xbar { position: relative; height: 12px; }
+.xbar::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line); }
+.xbar i { position: absolute; top: 0; bottom: 0; }
+.xv { text-align: right; font-variant-numeric: tabular-nums; }
+
 /* ---------- 분석법 질문하기 ---------- */
 .chat-menu { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .mchips { display: flex; flex-wrap: wrap; gap: 6px; }
