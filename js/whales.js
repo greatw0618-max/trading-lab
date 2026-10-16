@@ -162,7 +162,7 @@
       const tot = g.long + g.short, lp = tot ? g.long / tot * 100 : 50, net = g.long - g.short;
       tb.append(el('tr', { class: 'click', title: '청산 구간 맵 보기', onclick: () => { W.liqCoin = g.coin; store.set('liqCoin', g.coin); $('#liqCoin').value = g.coin; renderLiq(); $('#liq').scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
         el('td', null, el('b', { text: coinName(g.coin) }), ' ',
-          el('button', { class: 'btn', type: 'button', style: 'padding:1px 7px;font-size:12px', title: '이 종목을 매매 분석 탭에서 보기', text: '차트', onclick: e => { e.stopPropagation(); U.openChart && U.openChart(g.coin); } })),
+          el('button', { class: 'btn', type: 'button', style: 'padding:1px 7px;font-size:12px', title: '이 종목을 차트 분석 탭에서 보기', text: '차트', onclick: e => { e.stopPropagation(); U.openChart && U.openChart(g.coin); } })),
         el('td', { class: 'r m up', text: fusd(g.long) }), el('td', { class: 'r m down', text: fusd(g.short) }),
         el('td', null, el('div', { class: 'bar-cell' }, el('div', { class: 'lsbar', title: `롱 ${lp.toFixed(0)}% : 숏 ${(100 - lp).toFixed(0)}%` }, el('i', { style: `width:${lp}%;background:var(--up)` }), el('i', { style: `width:${100 - lp}%;background:var(--down)` })), el('span', { class: 'm muted', text: `${lp.toFixed(0)}:${(100 - lp).toFixed(0)}` }))),
         el('td', { class: 'r m ' + toneOf(net), text: (net > 0 ? '롱 ' : '숏 ') + fusd(Math.abs(net)) }),
