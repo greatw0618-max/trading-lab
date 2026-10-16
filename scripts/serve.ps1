@@ -166,6 +166,28 @@ while ($l.IsListening) {
         $statusCache = $null
         Send-Text $ctx 200 'application/json; charset=utf-8' '{"started":true}'; continue
       }
+      if ($path -eq 'api/report/save' -and $ctx.Request.HttpMethod -eq 'POST') {
+        # Saves one report (and its backtest result) as reports/<id>.json and keeps reports/index.json in sync.
+        try {
+          $reader = New-Object IO.StreamReader($ctx.Request.InputStream, [Text.Encoding]::UTF8)
+          $raw = $reader.ReadToEnd()
+          $rep = $raw | ConvertFrom-Json
+          $id = [string]$rep.id
+          if (-not ($id -match '^[0-9]{8}-[0-9]{6}-[A-Za-z0-9]{1,20}$')) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'bad id'; continue }
+          $dir = Join-Path $Root 'reports'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          [IO.File]::WriteAllText((Join-Path $dir "$id.json"), $raw, (New-Object Text.UTF8Encoding $false))
+          $idxFile = Join-Path $dir 'index.json'
+          $list = @()
+          if (Test-Path $idxFile) { try { $list = @(([IO.File]::ReadAllText($idxFile, [Text.Encoding]::UTF8) | ConvertFrom-Json).reports) } catch { $list = @() } }
+          $entry = [ordered]@{ id = $id; sym = $rep.sym; created = $rep.created; direction = $rep.plan.direction; confidence = $rep.plan.confidence; status = $(if ($rep.result) { $rep.result.status } else { $null }) }
+          $list = @($list | Where-Object { $_.id -ne $id }) + @([pscustomobject]$entry)
+          $json = ConvertTo-Json -InputObject ([ordered]@{ reports = @($list | Sort-Object id -Descending) }) -Depth 5 -Compress
+          [IO.File]::WriteAllText($idxFile, $json, (New-Object Text.UTF8Encoding $false))
+          Send-Text $ctx 200 'application/json; charset=utf-8' '{"saved":true}'
+        } catch { Send-Text $ctx 500 'text/plain; charset=utf-8' ('save failed: ' + $_.Exception.Message) }
+        continue
+      }
       if ($path -eq 'api/ask' -and $ctx.Request.HttpMethod -eq 'POST') {
         $ps = [powershell]::Create(); $ps.RunspacePool = $pool
         [void]$ps.AddScript($askScript).AddArgument($ctx).AddArgument($Claude)

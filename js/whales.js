@@ -225,6 +225,23 @@
   $('#lbN').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; W.n = +b.dataset.v; store.set('lbN', W.n); loadAgg(); });
   $('#aggRefresh').addEventListener('click', loadAgg);
 
+  // 리포트 탭용: 이번 달 수익 상위 n명이 이 종목에 건 롱·숏 합계와 청산 가격 분포
+  U.whaleSnapshot = async function (coin, n = 40) {
+    const lb = await loadLB();
+    const top = lb.rows.slice().sort((a, b) => b.mPnl - a.mPnl).slice(0, n);
+    const res = await pool(top, 4, r => positionsOf(r.a));
+    const ps = [];
+    res.forEach(x => { if (x) x.pos.forEach(p => { if (p.coin === coin) ps.push(p); }); });
+    const long = ps.filter(p => p.side > 0), short = ps.filter(p => p.side < 0);
+    const sum = a => a.reduce((t, p) => t + p.val, 0);
+    const mark = ps.length ? ps[0].mark : null;
+    const liq = ps.filter(p => p.liq).map(p => ({ side: p.side > 0 ? '롱' : '숏', liq: p.liq, val: p.val, distPct: mark ? (p.liq / mark - 1) * 100 : null }))
+      .sort((a, b) => b.val - a.val).slice(0, 15);
+    return { traders: res.filter(Boolean).length, mark, longUsd: sum(long), shortUsd: sum(short), nLong: long.length, nShort: short.length,
+      avgEntryLong: long.length ? sum(long.map(p => ({ val: p.val * p.entry }))) / sum(long) : null,
+      avgEntryShort: short.length ? sum(short.map(p => ({ val: p.val * p.entry }))) / sum(short) : null, liq };
+  };
+
   // ---------- 시작 ----------
   let started = false, tick = 0;
   function start() { if (started) return; started = true; loadWallets(); loadAgg(); }

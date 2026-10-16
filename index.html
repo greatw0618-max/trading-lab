@@ -18,6 +18,7 @@
       <a href="#trade" id="nav-trade" aria-current="page">차트 분석</a>
       <a href="#flow" id="nav-flow">시장 수급</a>
       <a href="#whale" id="nav-whale">고래 추적</a>
+      <a href="#report" id="nav-report">리포트</a>
     </nav>
     <div class="spacer"></div>
     <div class="status"><span class="dot" id="dot"></span><span id="stxt">불러오는 중…</span></div>
@@ -235,6 +236,30 @@
   <footer><span>포지션 데이터: 하이퍼리퀴드 공개 API. 리더보드: stats-data.hyperliquid.xyz (하루 여러 번 갱신). 고래의 포지션은 참고 정보일 뿐, 따라 하는 것을 권하지 않습니다.</span></footer>
 </div>
 
+<div class="wrap" id="tab-report" hidden>
+  <section class="panel">
+    <div class="ph"><h2>리포트</h2><small>종목을 고르면 Claude가 15분·1시간·4시간·일봉과 6개 관점(엘리엇·ICT·와이코프·다이버전스·수급·고래)을 종합해 롱/숏 셋업을 씁니다 · 손익비 2:1 이상 · 72시간 뒤 자동 채점</small></div>
+    <div class="controls">
+      <div class="seg" id="repSym" role="group" aria-label="종목">
+        <button data-v="SOXL">SOXL</button><button data-v="KORU">KORU</button><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="HYPE">HYPE</button>
+      </div>
+      <form class="search" id="repForm" role="search">
+        <input id="repIn" list="symList" placeholder="다른 종목 (XRP, TSLA…)" aria-label="리포트 종목 검색" autocomplete="off" spellcheck="false">
+        <button class="btn" type="submit">선택</button>
+      </form>
+      <span class="muted">선택: <b id="repPick"></b></span>
+      <button class="btn primary" id="repGo" type="button">Claude 리포트 작성</button>
+      <span class="muted" id="repStatus" style="font-size:12.5px"></span>
+    </div>
+  </section>
+  <div class="rep-grid">
+    <aside class="panel" id="repList" aria-label="리포트 기록"></aside>
+    <div id="repView"></div>
+  </div>
+  <section class="panel" id="repScore" aria-label="백테스트 성적표"></section>
+  <footer><span>리포트는 Claude가 대시보드 판독(하이퍼리퀴드 15분·1시간·4시간·일봉), 바이낸스·하이퍼리퀴드 수급, 하이퍼리퀴드 상위 트레이더 포지션으로 작성합니다. 채점은 하이퍼리퀴드 15분봉 기준이며 같은 봉에서 목표와 손절이 둘 다 닿으면 손절로 셉니다. 투자 자문이 아닙니다.</span></footer>
+</div>
+
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="js/indicators.js"></script>
 <script src="js/analysis.js"></script>
@@ -244,6 +269,7 @@
 <script src="js/whales.js"></script>
 <script src="js/flow.js"></script>
 <script src="js/cvdx.js"></script>
+<script src="js/report.js"></script>
 <script type="module" src="js/chat.js"></script>
 </body>
 </html>
