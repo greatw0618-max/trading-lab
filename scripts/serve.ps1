@@ -105,8 +105,17 @@ function Update-FromGitHub {
 }
 Update-FromGitHub; $lastPull = Get-Date
 
+# Record start/stop in a small log so a server that disappears can be diagnosed later.
+$logFile = Join-Path $env:TEMP 'maemae-server.log'
+function Write-Log($m) { try { Add-Content -Path $logFile -Value ((Get-Date -Format 's') + ' ' + $m) } catch {} }
+Write-Log "started (pid $PID)"
+Register-EngineEvent PowerShell.Exiting -Action { Add-Content -Path (Join-Path $env:TEMP 'maemae-server.log') -Value ((Get-Date -Format 's') + ' exiting') } | Out-Null
+
 while ($l.IsListening) {
-  $ctx = $l.GetContext()
+  # Wait for requests in short slices instead of blocking forever, so the process keeps responding to Windows.
+  $pending = $l.GetContextAsync()
+  while (-not $pending.Wait(500)) { }
+  $ctx = $pending.Result
   if (((Get-Date) - $lastPull).TotalMinutes -ge 30) { $lastPull = Get-Date; Update-FromGitHub }
   # Clean up finished chat jobs
   for ($k = $jobs.Count - 1; $k -ge 0; $k--) { if ($jobs[$k].h.IsCompleted) { try { $jobs[$k].ps.EndInvoke($jobs[$k].h) } catch {}; $jobs[$k].ps.Dispose(); $jobs.RemoveAt($k) } }
