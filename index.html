@@ -19,6 +19,7 @@
       <a href="#flow" id="nav-flow">시장 수급</a>
       <a href="#whale" id="nav-whale">고래 추적</a>
       <a href="#report" id="nav-report">리포트</a>
+      <a href="#test" id="nav-test">매매 테스트</a>
     </nav>
     <div class="spacer"></div>
     <div class="status"><span class="dot" id="dot"></span><span id="stxt">불러오는 중…</span></div>
@@ -260,6 +261,48 @@
   <footer><span>리포트는 Claude가 대시보드 판독(하이퍼리퀴드 15분·1시간·4시간·일봉), 바이낸스·하이퍼리퀴드 수급, 하이퍼리퀴드 상위 트레이더 포지션으로 작성합니다. 채점은 하이퍼리퀴드 15분봉 기준이며 같은 봉에서 목표와 손절이 둘 다 닿으면 손절로 셉니다. 투자 자문이 아닙니다.</span></footer>
 </div>
 
+<div class="wrap" id="tab-test" hidden>
+  <section class="panel">
+    <div class="ph"><h2>매매 테스트</h2><small>차트를 보고 포지션을 잡아 보세요 · 진입가에 체결됐다고 가정하고 익절·손절 중 먼저 닿은 쪽으로 채점 · 저장하면 Claude 사전 평가, 결과가 나오면 Claude 사후 분석</small></div>
+    <div class="controls">
+      <div class="seg" id="ttSym" role="group" aria-label="종목">
+        <button data-v="SOXL">SOXL</button><button data-v="KORU">KORU</button><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="HYPE">HYPE</button>
+      </div>
+      <form class="search" id="ttSymForm" role="search">
+        <input id="ttSymIn" list="symList" placeholder="다른 종목 (XRP, TSLA…)" aria-label="매매 테스트 종목 검색" autocomplete="off" spellcheck="false">
+        <button class="btn" type="submit">선택</button>
+      </form>
+      <span class="muted">선택: <b id="ttPick"></b></span>
+    </div>
+    <form class="params" id="ttParams">
+      <div class="field"><span>방향</span>
+        <div class="seg" id="ttDir" role="group" aria-label="방향"><button type="button" data-v="1">롱 (오른다)</button><button type="button" data-v="-1">숏 (내린다)</button></div>
+      </div>
+      <label>진입가 (지정가)
+        <span class="inrow"><input id="ttEntry" type="number" step="any" min="0" placeholder="가격 입력"><button type="button" class="btn" id="ttNow">현재가</button></span>
+      </label>
+      <label>목표 수익 (%)<input id="ttTp" type="number" step="0.1" min="0.1" value="2" placeholder="예: 2"></label>
+      <label>손절 (%)<input id="ttSl" type="number" step="0.1" min="0.1" value="1" placeholder="예: 1"></label>
+      <label>투자금 (USD, 선택)<input id="ttAmt" type="number" min="0" step="any" placeholder="예: 1000"></label>
+      <label>레버리지 (배)<input id="ttLev" type="number" min="1" max="50" step="1" value="1"></label>
+      <label class="tt-memo-in">잡은 이유 (메모)<textarea id="ttMemo" rows="2" placeholder="예: 1시간 상승 CHoCH 뒤 눌림, FVG 하단에서 반등"></textarea></label>
+    </form>
+    <div id="ttPreview"></div>
+    <div class="tt-chart" id="ttChart"></div>
+    <div class="controls tt-save"><button class="btn primary" id="ttSave" type="button">이 포지션 저장</button><span class="muted" id="ttStatus" style="font-size:12.5px"></span></div>
+  </section>
+  <div class="rep-grid">
+    <aside class="panel" id="ttList" aria-label="매매 기록"></aside>
+    <div id="ttView"></div>
+  </div>
+  <section class="panel" id="ttScore" aria-label="내 매매 성적표"></section>
+  <section class="panel" aria-label="전체 기록 종합 분석">
+    <div class="ph"><h2>전체 기록 종합 분석</h2><span class="ph-right"><small id="ttRevStatus"></small><button class="btn primary" id="ttRevGo" type="button">Claude 종합 분석</button></span></div>
+    <div class="pb tt-review" id="ttRevBody"></div>
+  </section>
+  <footer><span>매매 테스트는 연습 기록입니다. 차트 분석 탭의 자동 판독 규칙은 바꾸지 않습니다. 채점은 하이퍼리퀴드 15분봉 기준이며, 같은 봉에서 익절과 손절이 둘 다 닿으면 손절로 셉니다. 투자 자문이 아닙니다.</span></footer>
+</div>
+
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="js/indicators.js"></script>
 <script src="js/analysis.js"></script>
@@ -270,6 +313,7 @@
 <script src="js/flow.js"></script>
 <script src="js/cvdx.js"></script>
 <script src="js/report.js"></script>
+<script src="js/tradetest.js"></script>
 <script type="module" src="js/chat.js"></script>
 </body>
 </html>

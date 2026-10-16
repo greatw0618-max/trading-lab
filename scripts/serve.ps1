@@ -166,15 +166,18 @@ while ($l.IsListening) {
         $statusCache = $null
         Send-Text $ctx 200 'application/json; charset=utf-8' '{"started":true}'; continue
       }
-      if ($path -eq 'api/report/save' -and $ctx.Request.HttpMethod -eq 'POST') {
-        # Saves one report (and its backtest result) as reports/<id>.json and keeps reports/index.json in sync.
+      if (($path -eq 'api/report/save' -or $path -eq 'api/save') -and $ctx.Request.HttpMethod -eq 'POST') {
+        # Saves one record as <kind>/<id>.json and keeps <kind>/index.json in sync.
+        # kind: reports (리포트 탭), trades (매매 테스트), reviews (매매 테스트 전체 분석)
         try {
+          $kind = if ($path -eq 'api/report/save') { 'reports' } else { [string]$ctx.Request.QueryString['kind'] }
+          if (@('reports', 'trades', 'reviews') -notcontains $kind) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'bad kind'; continue }
           $reader = New-Object IO.StreamReader($ctx.Request.InputStream, [Text.Encoding]::UTF8)
           $raw = $reader.ReadToEnd()
           $rep = $raw | ConvertFrom-Json
           $id = [string]$rep.id
           if (-not ($id -match '^[0-9]{8}-[0-9]{6}-[A-Za-z0-9]{1,20}$')) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'bad id'; continue }
-          $dir = Join-Path $Root 'reports'
+          $dir = Join-Path $Root $kind
           New-Item -ItemType Directory -Force $dir | Out-Null
           [IO.File]::WriteAllText((Join-Path $dir "$id.json"), $raw, (New-Object Text.UTF8Encoding $false))
           $idxFile = Join-Path $dir 'index.json'
@@ -188,7 +191,7 @@ while ($l.IsListening) {
           if ($git -and (Test-Path (Join-Path $Root '.git'))) {
             $g = $git.Source
             # A named mutex keeps several uploads (e.g. many results scored at once) from running git at the same time.
-            $cmd = "`$m = New-Object Threading.Mutex(`$false, 'MaemaeLabReportGit'); [void]`$m.WaitOne(); try { & '$g' -C '$Root' add -- reports/$id.json reports/index.json; & '$g' -C '$Root' commit -q -m 'Save report $id' -- reports/$id.json reports/index.json; & '$g' -C '$Root' pull --rebase --autostash -q origin main; & '$g' -C '$Root' push -q origin main } finally { `$m.ReleaseMutex() }"
+            $cmd = "`$m = New-Object Threading.Mutex(`$false, 'MaemaeLabReportGit'); [void]`$m.WaitOne(); try { & '$g' -C '$Root' add -- $kind/$id.json $kind/index.json; & '$g' -C '$Root' commit -q -m 'Save $kind $id' -- $kind/$id.json $kind/index.json; & '$g' -C '$Root' pull --rebase --autostash -q origin main; & '$g' -C '$Root' push -q origin main } finally { `$m.ReleaseMutex() }"
             Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', $cmd
           }
           Send-Text $ctx 200 'application/json; charset=utf-8' '{"saved":true}'

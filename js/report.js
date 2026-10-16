@@ -267,6 +267,8 @@ ${d.whale}
     return res;
   }
   U.reportEvaluate = evaluate; // 확인용
+  // 매매 테스트 탭이 같은 데이터 수집·Claude 호출을 씁니다.
+  U.repTools = { loadTf, tfText, flowText, whaleText, askClaude, parseJson, RULES, TFS, TF_LABEL };
   const STATUS = {
     waiting: ['warn', '진입 대기'], open: ['warn', '진입 · 진행 중'], win: ['good', '성공'], loss: ['bad', '손절 실패'],
     noentry: ['bad', '진입 실패'], timeout: ['flat', '시간 만료']

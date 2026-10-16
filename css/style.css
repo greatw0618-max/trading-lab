@@ -389,3 +389,22 @@ footer { color: var(--faint); font-size: 11.5px; display: grid; gap: 4px; paddin
 .rep-sum .cols > div { padding: 0 16px 0 0; }
 .rep-sum h3 { margin: 0 0 8px; font-size: 12.5px; font-weight: 800; }
 @media (max-width: 600px) { .rep-card { padding: 16px; } .rep-title h2 { font-size: 22px; } .rep-rr { font-size: 34px; } .ladder { margin-left: 64px; } }
+
+/* ---------- 매매 테스트 ---------- */
+.tt-memo-in { grid-column: 1 / -1; }
+.tt-memo-in textarea { padding: 6px 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2); color: var(--fg); font: 13px var(--sans); resize: vertical; }
+.tt-memo-in textarea:focus { border-color: var(--accent); outline: none; }
+.tt-chart { height: 300px; }
+#ttChart { border-top: 1px solid var(--line); }
+.tt-save { border-top: 1px solid var(--line); border-bottom: 0; }
+.tt-memo { margin: 0; font-size: 14px; }
+.tt-block { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tt-block h3 { margin: 0; font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.tt-block p { margin: 0; font-size: 13px; line-height: 1.6; }
+.tt-block .cols > div { padding: 0 16px 0 0; }
+.tt-block .cols > div + div { border-left: 0; }
+.tt-review { display: grid; gap: 10px; font-size: 13px; }
+.tt-review p { margin: 0; line-height: 1.6; }
+.tt-review h3 { margin: 4px 0 0; font-size: 12.5px; font-weight: 800; }
+.tt-review .cols > div { padding: 0 16px 0 0; }
+.tt-review .cols > div + div { border-left: 0; }

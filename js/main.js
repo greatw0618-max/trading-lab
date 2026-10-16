@@ -631,7 +631,7 @@
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { themeLabel(); applyTheme(); window.dispatchEvent(new Event('themechange')); });
 
   // 탭
-  const TABS = ['trade', 'flow', 'whale', 'report'];
+  const TABS = ['trade', 'flow', 'whale', 'report', 'test'];
   TA.ui.activeTab = () => { const h = location.hash.slice(1); return TABS.includes(h) ? h : 'trade'; };
   function route() {
     const cur = TA.ui.activeTab();
