@@ -263,7 +263,7 @@
 
 <div class="wrap" id="tab-test" hidden>
   <section class="panel">
-    <div class="ph"><h2>매매 테스트</h2><small>차트를 보고 포지션을 잡아 보세요 · 진입가에 체결됐다고 가정하고 익절·손절 중 먼저 닿은 쪽으로 채점 · 저장하면 Claude 사전 평가, 결과가 나오면 Claude 사후 분석</small></div>
+    <div class="ph"><h2>매매 테스트</h2><small>차트를 보고 포지션을 잡아 보세요 · 24시간 안에 진입가에 닿아야 진입(안 닿으면 진입 실패) · 진입 후 익절·손절 중 먼저 닿은 쪽으로 채점 · 저장하면 Claude 사전 평가, 결과가 나오면 Claude 사후 분석</small></div>
     <div class="controls">
       <div class="seg" id="ttSym" role="group" aria-label="종목">
         <button data-v="SOXL">SOXL</button><button data-v="KORU">KORU</button><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="HYPE">HYPE</button>
@@ -300,7 +300,7 @@
     <div class="ph"><h2>전체 기록 종합 분석</h2><span class="ph-right"><small id="ttRevStatus"></small><button class="btn primary" id="ttRevGo" type="button">Claude 종합 분석</button></span></div>
     <div class="pb tt-review" id="ttRevBody"></div>
   </section>
-  <footer><span>매매 테스트는 연습 기록입니다. 차트 분석 탭의 자동 판독 규칙은 바꾸지 않습니다. 채점은 하이퍼리퀴드 15분봉 기준이며, 같은 봉에서 익절과 손절이 둘 다 닿으면 손절로 셉니다. 투자 자문이 아닙니다.</span></footer>
+  <footer><span>매매 테스트는 연습 기록입니다. 차트 분석 탭의 자동 판독 규칙은 바꾸지 않습니다. 채점은 하이퍼리퀴드 15분봉 기준입니다. 저장 후 24시간 안에 진입가에 닿아야 진입하고, 진입한 봉에서 손절가도 닿거나 같은 봉에서 익절과 손절이 둘 다 닿으면 손절로 셉니다. 투자 자문이 아닙니다.</span></footer>
 </div>
 
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>

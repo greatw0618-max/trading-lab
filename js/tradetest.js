@@ -110,47 +110,61 @@
     const fc = formChart; setTimeout(() => { try { fc.ch.timeScale().fitContent(); } catch (e) {} }, 120);
   }
 
-  // ---------- 채점: 진입가에 체결됐다고 가정, 익절·손절 중 먼저 닿은 쪽 ----------
+  // ---------- 채점 ----------
+  // 1) 저장 후 24시간 안에 가격이 진입가에 닿아야 진입. 안 닿으면 진입 실패(0R).
+  // 2) 진입한 뒤 익절·손절 중 먼저 닿은 쪽 (시간 제한 없음). 진입한 봉에서 손절가도 닿으면 손절,
+  //    진입한 봉의 익절은 순서를 알 수 없어 세지 않음. 이후 같은 봉에서 둘 다 닿으면 손절.
+  const ENTRY_HOURS = 24;
   async function evaluate(tr) {
     if (tr.result && tr.result.final) return tr.result;
     const p = tr.plan, dir = p.direction === 'long' ? 1 : -1, coin = TA.hlCoin(tr.sym);
-    const start = Math.ceil(tr.created / 900) * 900, now = Date.now() / 1000;
-    let t = start, mfe = 0, mae = 0, last = null, out = null;
-    while (t < now && !out) {
+    const start = Math.ceil(tr.created / 900) * 900, now = Date.now() / 1000, entryEnd = tr.created + ENTRY_HOURS * 3600;
+    let t = start, mfe = 0, mae = 0, last = null, out = null, entered = null, stop = false;
+    while (t < now && !out && !stop) {
       const end = Math.min(now, t + 30 * 86400);
       const rows = await TA.hl({ type: 'candleSnapshot', req: { coin, interval: '15m', startTime: t * 1000, endTime: Math.floor(end * 1000) } });
       const bars = rows.map(k => ({ t: k.t / 1000, h: +k.h, l: +k.l, c: +k.c })).filter(b => b.t >= t);
       for (const b of bars) {
+        last = b;
         const hitS = dir > 0 ? b.l <= p.stop : b.h >= p.stop, hitT = dir > 0 ? b.h >= p.target : b.l <= p.target;
-        if (hitS) { out = { status: 'loss', at: b.t }; break; } // 같은 봉에서 둘 다 닿으면 손절로
+        if (!entered) {
+          if (b.t >= entryEnd) { stop = true; break; }
+          if (b.l <= p.entry && b.h >= p.entry) { entered = b.t; if (hitS) { out = { status: 'loss', at: b.t }; break; } }
+          continue;
+        }
+        if (hitS) { out = { status: 'loss', at: b.t }; break; }
         if (hitT) { out = { status: 'win', at: b.t }; break; }
         mfe = Math.max(mfe, dir > 0 ? b.h / p.entry - 1 : 1 - b.l / p.entry);
         mae = Math.min(mae, dir > 0 ? b.l / p.entry - 1 : 1 - b.h / p.entry);
-        last = b;
       }
       if (!bars.length) break;
       t = end;
     }
     const risk = Math.abs(p.entry - p.stop);
-    const res = out ? { status: out.status, at: out.at, r: out.status === 'win' ? p.rr : -1, final: true }
-      : { status: 'open', at: null, r: last ? dir * (last.c - p.entry) / risk : 0, final: false };
-    res.last = last ? last.c : null; res.mfe = mfe; res.mae = mae; res.checked = Math.floor(now);
+    let res;
+    if (out) res = { status: out.status, at: out.at, r: out.status === 'win' ? p.rr : -1, final: true };
+    else if (!entered) res = now >= entryEnd ? { status: 'noentry', at: null, r: 0, final: true } : { status: 'waiting', at: null, r: null, final: false };
+    else res = { status: 'open', at: null, r: last ? dir * (last.c - p.entry) / risk : 0, final: false };
+    res.entered = entered; res.last = last ? last.c : null; res.mfe = mfe; res.mae = mae; res.checked = Math.floor(now);
     if (out) res.hours = (out.at - tr.created) / 3600;
     return res;
   }
 
+  U.tradeEvaluate = evaluate; // 확인용
+
   // ---------- Claude ----------
   const fr = v => v == null ? '' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2) + 'R';
+  const RES_NAME = { win: '익절', loss: '손절', noentry: '진입 실패', open: '진입 · 진행 중', waiting: '진입 대기' };
   function done() { return T.list.map(it => T.trades[it.id]).filter(t => t && t.result && t.result.final); }
   function historyText(exceptId) {
     const d = done().filter(t => t.id !== exceptId);
     if (!d.length) return '아직 결과가 난 매매 기록 없음 (첫 기록)';
-    const win = d.filter(t => t.result.status === 'win').length, sumR = d.reduce((a, t) => a + t.result.r, 0);
-    const L = [`결과 난 매매 ${d.length}개 · 익절 ${win} · 손절 ${d.length - win} · 성공률 ${(win / d.length * 100).toFixed(0)}% · 합계 ${fr(sumR)}`];
+    const cnt = s => d.filter(t => t.result.status === s).length, win = cnt('win'), sumR = d.reduce((a, t) => a + t.result.r, 0);
+    const L = [`결과 난 매매 ${d.length}개 · 익절 ${win} · 손절 ${cnt('loss')} · 진입 실패 ${cnt('noentry')} · 성공률 ${(win / d.length * 100).toFixed(0)}% · 합계 ${fr(sumR)}`];
     [5, 4, 3, 2, 1].forEach(k => { const g = d.filter(t => t.pre && t.pre.score === k); if (g.length) L.push(`- Claude 사전 평가 ${k}점: ${g.length}개 중 익절 ${g.filter(t => t.result.status === 'win').length}`); });
     ['long', 'short'].forEach(s => { const g = d.filter(t => t.plan.direction === s); if (g.length) L.push(`- ${s === 'long' ? '롱' : '숏'}: ${g.length}개 중 익절 ${g.filter(t => t.result.status === 'win').length}`); });
     L.push('최근 기록 (최신순):');
-    d.slice(0, 15).forEach(t => L.push(`- ${fdt(t.created)} ${TA.disp(t.sym)} ${t.plan.direction === 'long' ? '롱' : '숏'} 진입 ${fp(t.plan.entry)} 목표 ${t.plan.tpPct}% 손절 ${t.plan.slPct}% (손익비 ${t.plan.rr.toFixed(2)}) · 사전 평가 ${t.pre ? t.pre.score + '점' : '-'} · 결과 ${t.result.status === 'win' ? '익절' : '손절'} (${t.result.hours != null ? t.result.hours.toFixed(1) + '시간' : '-'}) · 이유: ${(t.memo || '-').slice(0, 60)}${t.post && t.post.lesson ? ' · 교훈: ' + t.post.lesson : ''}`));
+    d.slice(0, 15).forEach(t => L.push(`- ${fdt(t.created)} ${TA.disp(t.sym)} ${t.plan.direction === 'long' ? '롱' : '숏'} 진입 ${fp(t.plan.entry)} 목표 ${t.plan.tpPct}% 손절 ${t.plan.slPct}% (손익비 ${t.plan.rr.toFixed(2)}) · 사전 평가 ${t.pre ? t.pre.score + '점' : '-'} · 결과 ${RES_NAME[t.result.status]}${t.result.hours != null ? ' (' + t.result.hours.toFixed(1) + '시간)' : ''} · 이유: ${(t.memo || '-').slice(0, 60)}${t.post && t.post.lesson ? ' · 교훈: ' + t.post.lesson : ''}`));
     return L.join('\n');
   }
   async function marketData(sym) {
@@ -161,7 +175,7 @@
   }
   const posText = tr => { const p = tr.plan; return `종목 ${TA.dispFull(tr.sym)} · ${p.direction === 'long' ? '롱' : '숏'} · 진입가 ${fp(p.entry)} (작성 시 현재가 ${fp(tr.price)}) · 익절 ${fp(p.target)} (${p.tpPct}%) · 손절 ${fp(p.stop)} (${p.slPct}%) · 손익비 ${p.rr.toFixed(2)}:1 · 레버리지 ${p.lev}배 · 작성 ${fdt(tr.created)}\n잡은 이유(사용자 메모): ${tr.memo || '없음'}`; };
   const predText = tr => { const x = tr.predict; return x ? `대시보드 예상: 과거 비슷한 상황(${x.tier})에서 7일 안에 결론 난 ${x.win + x.sl}번 중 익절 ${x.win}번 (${x.pWin == null ? '-' : (x.pWin * 100).toFixed(0) + '%'})\n대시보드 판독 요인:\n${(x.factors || []).map(f => `- [${f[0]}] ${f[1]}`).join('\n')}` : '대시보드 예상 없음'; };
-  const HEAD = `너는 "매매연구소" 대시보드의 매매 코치다. 사용자는 차트 분석 초보인 데이트레이더이고, 자기가 잡은 연습 포지션을 평가받으며 배운다. 쉬운 한국어로 쓰고 전문 용어는 처음 나올 때 괄호로 짧게 풀이한다. 가격 숫자는 주어진 데이터에 있는 값이나 그로부터 계산한 값만 쓴다. 매수·매도를 지시하지 않고 근거와 개선점을 말한다. 채점 방식: 진입가에 체결됐다고 가정하고 익절가와 손절가 중 먼저 닿은 쪽으로 판정(시간 제한 없음, 같은 15분봉에서 둘 다 닿으면 손절). **JSON 하나로만** 답한다.`;
+  const HEAD = `너는 "매매연구소" 대시보드의 매매 코치다. 사용자는 차트 분석 초보인 데이트레이더이고, 자기가 잡은 연습 포지션을 평가받으며 배운다. 쉬운 한국어로 쓰고 전문 용어는 처음 나올 때 괄호로 짧게 풀이한다. 가격 숫자는 주어진 데이터에 있는 값이나 그로부터 계산한 값만 쓴다. 매수·매도를 지시하지 않고 근거와 개선점을 말한다. 채점 방식: 저장 후 24시간 안에 가격이 진입가(지정가)에 닿아야 진입하고, 안 닿으면 진입 실패(0R). 진입한 뒤에는 익절가와 손절가 중 먼저 닿은 쪽으로 판정(시간 제한 없음, 같은 15분봉에서 둘 다 닿으면 손절). 그래서 진입가가 24시간 안에 올 만한 자리인지도 평가한다. **JSON 하나로만** 답한다.`;
 
   async function preEval(tr) {
     const k = tools();
@@ -232,7 +246,7 @@ ${historyText(tr.id)}
     try {
       for (const it of T.list) {
         const tr = T.trades[it.id]; if (!tr) continue;
-        const needPre = !tr.pre && (tr.preErr || 0) < 2, needPost = tr.result && tr.result.final && !tr.post && (tr.postErr || 0) < 2;
+        const needPre = !tr.pre && (tr.preErr || 0) < 2, needPost = tr.result && tr.result.final && tr.result.status !== 'noentry' && !tr.post && (tr.postErr || 0) < 2;
         if (!needPre && !needPost) continue;
         window.TA_chatBusy = true;
         setStatus(needPre ? `${TA.disp(tr.sym)} 포지션을 Claude가 사전 평가하는 중… (1~2분)` : `${TA.disp(tr.sym)} 결과를 Claude가 사후 분석하는 중… (1~2분)`);
@@ -279,9 +293,9 @@ ${historyText(tr.id)}
   }
 
   // ---------- 화면 ----------
-  const STATUS = { open: ['warn', '진행 중'], win: ['good', '익절'], loss: ['bad', '손절'] };
+  const STATUS = { waiting: ['warn', '진입 대기'], open: ['warn', '진행 중'], win: ['good', '익절'], loss: ['bad', '손절'], noentry: ['bad', '진입 실패'] };
   const stars = n => { n = Math.max(0, Math.min(5, n | 0)); return '★'.repeat(n) + '☆'.repeat(5 - n); };
-  const statusChip = r => r ? chip(STATUS[r.status][0], STATUS[r.status][1] + ' ' + fr(r.r)) : chip('flat', '채점 전');
+  const statusChip = r => r && STATUS[r.status] ? chip(STATUS[r.status][0], STATUS[r.status][1] + (r.r != null ? ' ' + fr(r.r) : '')) : chip('flat', '채점 전');
   function renderList() {
     const box = $('#ttList'); box.textContent = '';
     box.append(el('div', { class: 'ph' }, el('h2', { text: '매매 기록' }), el('small', { text: `${T.list.length}개` })));
@@ -311,10 +325,15 @@ ${historyText(tr.id)}
     // 결과
     if (r) {
       const L = [];
-      if (r.status !== 'open') L.push(`${r.status === 'win' ? '익절' : '손절'} ${fdt(r.at)} · 진입 후 ${r.hours.toFixed(1)}시간`);
-      else if (r.last != null) L.push(`지금 ${fp(r.last)} · 평가 손익 ${fr(r.r)}`);
-      L.push(`그동안 최대 유리 ${fpct(r.mfe * 100, 2)} · 최대 불리 ${fpct(r.mae * 100, 2)}`);
-      if (p.amt && r.status !== 'open') { const v = p.amt * p.lev * (r.status === 'win' ? p.tpPct : -p.slPct) / 100; L.push(`금액 ${v >= 0 ? '+' : '-'}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`); }
+      if (r.status === 'waiting') L.push(`진입가 ${fp(p.entry)}에 아직 안 닿음 · ${fdt(tr.created + ENTRY_HOURS * 3600)}까지 안 닿으면 진입 실패${r.last != null ? ` · 지금 ${fp(r.last)}` : ''}`);
+      else if (r.status === 'noentry') L.push(`24시간 안에 진입가 ${fp(p.entry)}에 닿지 않아 진입 실패 (0R)`);
+      else {
+        if (r.entered) L.push(`진입 ${fdt(r.entered)}`);
+        if (r.status === 'open') { if (r.last != null) L.push(`지금 ${fp(r.last)} · 평가 손익 ${fr(r.r)}`); }
+        else L.push(`${r.status === 'win' ? '익절' : '손절'} ${fdt(r.at)} · 저장 후 ${r.hours.toFixed(1)}시간`);
+        L.push(`진입 후 최대 유리 ${fpct(r.mfe * 100, 2)} · 최대 불리 ${fpct(r.mae * 100, 2)}`);
+      }
+      if (p.amt && (r.status === 'win' || r.status === 'loss')) { const v = p.amt * p.lev * (r.status === 'win' ? p.tpPct : -p.slPct) / 100; L.push(`금액 ${v >= 0 ? '+' : '-'}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`); }
       card.append(el('div', { class: 'rep-result' }, el('b', { text: '결과' }), statusChip(r), el('span', { class: 'muted', text: L.join(' · ') })));
     }
     // 예상
@@ -335,7 +354,7 @@ ${historyText(tr.id)}
     } else preBox.append(el('p', { class: 'note', text: tr.preErr >= 2 ? `사전 평가를 받지 못했습니다: ${tr.lastErr || ''}` : T.local ? 'Claude가 평가하는 중이거나 순서를 기다리는 중입니다 (1~2분).' : '사전 평가는 내 컴퓨터 대시보드가 켜져 있을 때 만들어집니다.' }));
     card.append(preBox);
     // Claude 사후 분석
-    if (r && r.final) {
+    if (r && r.final && r.status !== 'noentry') {
       const post = tr.post, pb = el('div', { class: 'tt-block' }, el('h3', { text: 'Claude 사후 분석' }));
       if (post) {
         pb.append(el('p', null, el('b', { text: post.summary || '' })), ul(post.why));
@@ -349,7 +368,7 @@ ${historyText(tr.id)}
     // 차트
     const cbox = el('div', { class: 'tt-chart' });
     card.append(el('div', { class: 'tt-block' }, el('h3', { text: '15분봉 · ◆ 저장 시점' }), cbox));
-    card.append(el('p', { class: 'note rep-disc', text: '연습용 기록입니다. 진입가에 체결됐다고 가정하고 하이퍼리퀴드 15분봉으로 익절·손절 중 먼저 닿은 쪽을 셉니다(같은 봉이면 손절). 투자 자문이 아닙니다.' }));
+    card.append(el('p', { class: 'note rep-disc', text: '연습용 기록입니다. 저장 후 24시간 안에 진입가에 닿아야 진입(안 닿으면 진입 실패 0R), 진입 후 하이퍼리퀴드 15분봉으로 익절·손절 중 먼저 닿은 쪽을 셉니다(같은 봉이면 손절). 투자 자문이 아닙니다.' }));
     box.append(card);
     (async () => {
       try {
@@ -366,7 +385,7 @@ ${historyText(tr.id)}
 
   function renderScore() {
     const box = $('#ttScore'); box.textContent = '';
-    box.append(el('div', { class: 'ph' }, el('h2', { text: '내 매매 성적표' }), el('small', { text: '익절 = +손익비 R · 손절 = −1R · 1R은 손절 한 번에 잃는 금액' })));
+    box.append(el('div', { class: 'ph' }, el('h2', { text: '내 매매 성적표' }), el('small', { text: '익절 = +손익비 R · 손절 = −1R · 진입 실패(24시간 안 미진입) = 0R · 1R은 손절 한 번에 잃는 금액' })));
     const all = T.list.map(it => T.trades[it.id]).filter(Boolean), d = done();
     if (!all.length) { box.append(el('p', { class: 'note pb', text: '기록이 쌓이면 성적이 나옵니다.' })); return; }
     const win = d.filter(t => t.result.status === 'win').length, sumR = d.reduce((a, t) => a + t.result.r, 0);
@@ -375,7 +394,7 @@ ${historyText(tr.id)}
     const tile = (k, v, sub, cls) => el('div', { class: 'tile' }, el('div', { class: 'k', text: k }), el('div', { class: 'v ' + (cls || ''), text: v }), el('div', { class: 's', text: sub }));
     box.append(el('div', { class: 'tiles' },
       tile('기록', String(all.length), `결과 ${d.length} · 진행 중 ${all.length - d.length}`),
-      tile('성공률', d.length ? (win / d.length * 100).toFixed(0) + '%' : '—', `익절 ${win} · 손절 ${d.length - win}`),
+      tile('성공률', d.length ? (win / d.length * 100).toFixed(0) + '%' : '—', `익절 ${win} · 손절 ${d.filter(t => t.result.status === 'loss').length} · 진입 실패 ${d.filter(t => t.result.status === 'noentry').length}`),
       tile('합계', d.length ? fr(sumR) : '—', d.length ? `1개당 평균 ${fr(sumR / d.length)}` : '', toneOf(sumR)),
       tile('금액 합계', money ? (money >= 0 ? '+' : '-') + '$' + Math.abs(money).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—', '투자금을 넣은 기록만', toneOf(money)),
       tile('예상 vs 실제', pa == null ? '—' : `${(pa * 100).toFixed(0)}% → ${(win / d.length * 100).toFixed(0)}%`, '대시보드 예상 익절 확률 평균 → 실제 성공률')));
@@ -398,7 +417,7 @@ ${historyText(tr.id)}
     const t0 = Date.now();
     try {
       const k = tools();
-      const lines = all.map(t => `- ${fdt(t.created)} ${TA.disp(t.sym)} ${t.plan.direction === 'long' ? '롱' : '숏'} 진입 ${fp(t.plan.entry)} 목표 ${t.plan.tpPct}% 손절 ${t.plan.slPct}% 손익비 ${t.plan.rr.toFixed(2)} · 예상 ${t.predict && t.predict.pWin != null ? (t.predict.pWin * 100).toFixed(0) + '%' : '-'} · 사전 ${t.pre ? t.pre.score + '점' : '-'} · 결과 ${t.result ? (t.result.final ? (t.result.status === 'win' ? '익절' : '손절') + ` ${t.result.hours != null ? t.result.hours.toFixed(1) + 'h' : ''}` : '진행 중') : '-'} · 이유: ${(t.memo || '-').slice(0, 80)}${t.post && t.post.lesson ? ' · 교훈: ' + t.post.lesson : ''}`).join('\n');
+      const lines = all.map(t => `- ${fdt(t.created)} ${TA.disp(t.sym)} ${t.plan.direction === 'long' ? '롱' : '숏'} 진입 ${fp(t.plan.entry)} 목표 ${t.plan.tpPct}% 손절 ${t.plan.slPct}% 손익비 ${t.plan.rr.toFixed(2)} · 예상 ${t.predict && t.predict.pWin != null ? (t.predict.pWin * 100).toFixed(0) + '%' : '-'} · 사전 ${t.pre ? t.pre.score + '점' : '-'} · 결과 ${t.result ? RES_NAME[t.result.status] + (t.result.hours != null ? ` ${t.result.hours.toFixed(1)}h` : '') : '-'} · 이유: ${(t.memo || '-').slice(0, 80)}${t.post && t.post.lesson ? ' · 교훈: ' + t.post.lesson : ''}`).join('\n');
       const prompt = `${HEAD}
 
 [할 일] 사용자의 매매 테스트 전체 기록을 보고 종합 분석한다. 습관, 잘 맞는 상황, 반복되는 실수, Claude 사전 평가가 실제로 맞았는지(점수별 성공률), 다음에 시도해 볼 것을 정리한다. 기록이 적으면(20개 미만) 결론이 약하다고 솔직히 쓴다.
