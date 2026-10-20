@@ -13,11 +13,18 @@ function Find-Claude {
   if ($c) { return $c.Source }
   $dirs = @("$env:APPDATA\Claude\claude-code")
   $dirs += Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory -Filter 'Claude_*' -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.FullName 'LocalCache\Roaming\Claude\claude-code' }
+  # Newer Claude desktop versions keep Claude Code under %LOCALAPPDATA%\Claude-Data\<package>\claude-code\<version>\...
+  $dirs += Get-ChildItem "$env:LOCALAPPDATA\Claude-Data" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.FullName 'claude-code' }
   $exe = $dirs | Where-Object { Test-Path $_ } | ForEach-Object { Get-ChildItem $_ -Recurse -Filter 'claude.exe' -ErrorAction SilentlyContinue } | Sort-Object LastWriteTime | Select-Object -Last 1
   if ($exe) { return $exe.FullName }
   return $null
 }
 $Claude = Find-Claude
+# The Claude app moves or replaces Claude Code when it updates, so look it up again whenever the saved path is gone.
+function Get-Claude {
+  if (-not $script:Claude -or -not (Test-Path $script:Claude)) { $script:Claude = Find-Claude }
+  return $script:Claude
+}
 
 function Send-Text($ctx, [int]$code, [string]$type, [string]$text) {
   $bytes = [Text.Encoding]::UTF8.GetBytes($text)
@@ -156,13 +163,15 @@ while ($l.IsListening) {
       if ($path -eq 'api/ask/status') {
         if (-not $statusCache -or ((Get-Date) - $statusAt).TotalSeconds -gt 20 -or $ctx.Request.QueryString['refresh']) {
           $logged = $false
-          if ($Claude) { try { $st = (& $Claude auth status 2>$null) -join "`n" | ConvertFrom-Json; $logged = [bool]$st.loggedIn } catch {} }
-          $statusCache = (@{ available = [bool]$Claude; loggedIn = $logged } | ConvertTo-Json -Compress); $statusAt = Get-Date
+          $cl = Get-Claude
+          if ($cl) { try { $st = (& $cl auth status 2>$null) -join "`n" | ConvertFrom-Json; $logged = [bool]$st.loggedIn } catch {} }
+          $statusCache = (@{ available = [bool]$cl; loggedIn = $logged } | ConvertTo-Json -Compress); $statusAt = Get-Date
         }
         Send-Text $ctx 200 'application/json; charset=utf-8' $statusCache; continue
       }
       if ($path -eq 'api/login' -and $ctx.Request.HttpMethod -eq 'POST') {
-        if ($Claude) { Start-Process -FilePath $Claude -ArgumentList 'auth', 'login' }
+        $cl = Get-Claude
+        if ($cl) { Start-Process -FilePath $cl -ArgumentList 'auth', 'login' }
         $statusCache = $null
         Send-Text $ctx 200 'application/json; charset=utf-8' '{"started":true}'; continue
       }
@@ -200,7 +209,7 @@ while ($l.IsListening) {
       }
       if ($path -eq 'api/ask' -and $ctx.Request.HttpMethod -eq 'POST') {
         $ps = [powershell]::Create(); $ps.RunspacePool = $pool
-        [void]$ps.AddScript($askScript).AddArgument($ctx).AddArgument($Claude)
+        [void]$ps.AddScript($askScript).AddArgument($ctx).AddArgument((Get-Claude))
         [void]$jobs.Add(@{ ps = $ps; h = $ps.BeginInvoke() })
         continue
       }
