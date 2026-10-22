@@ -308,6 +308,26 @@
     $('#xcSrc').textContent = `기록 시작: ${starts.join(' · ')} · 바이낸스 = 1분봉의 시장가 매수량, 나머지 = 실시간 체결(이 기기에 48시간 보관). 코인베이스·바이빗은 과거 체결을 주지 않아 이 페이지를 연 뒤부터 모입니다. OKX·비트파이넥스의 과거 기록은 컴퓨터(start-local)에서만 채워집니다.`;
   }
 
+  // 리포트용: 거래소별 시장가 순매수(최근 1시간·4시간·1일). 이 기기에 모인 기록만 쓰므로 없을 수 있습니다.
+  U.cvdxSummary = function (coin) {
+    let maps = {};
+    if (X.coin === coin) maps = X.b;
+    else { try { const saved = JSON.parse(store.get('xcvd.' + coin, '{}')); for (const [k, rows] of Object.entries(saved)) maps[k] = new Map(rows.map(([t, b, s]) => [t, [b, s]])); } catch (e) {} }
+    const now = Date.now(), L = [], am = v => compact(v) + ' ' + coin;
+    ['fut', 'spot'].forEach(m => {
+      const parts = [];
+      ['1h', '4h', '1d'].forEach(w => {
+        const from = now - WIN[w] * MIN, per = [];
+        EX[m].forEach(e => { const b = maps[key(m, e.id)]; if (!b || !b.size) return; let net = 0, st = Infinity; b.forEach((v, t) => { st = Math.min(st, t); if (t >= from) net += v[0] - v[1]; }); per.push({ n: e.name, net, part: st > from + 2 * MIN }); });
+        if (!per.length) return;
+        const tot = per.reduce((s, x) => s + x.net, 0);
+        parts.push(`${w} 합계 ${am(tot)} (${per.sort((a, z) => Math.abs(z.net) - Math.abs(a.net)).map(x => `${x.n} ${am(x.net)}${x.part ? '*' : ''}`).join(', ')})`);
+      });
+      if (parts.length) L.push(`${m === 'fut' ? '선물' : '현물'} 거래소별 시장가 순매수 — ${parts.join(' / ')}`);
+    });
+    return L.length ? `[거래소별 시장가 순매수] ${coin} (* = 기록이 그 기간 중간부터)\n` + L.join('\n') : null;
+  };
+
   // ---------- 시작 · 코인 바꾸기 ----------
   async function startCoin(c) {
     if (X.coin === c) return;

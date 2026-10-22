@@ -31,7 +31,9 @@
     const rsi = lastOf(TA.rsi(s.c, 14)), atr = lastOf(TA.atr(s.h, s.l, s.c, 14));
     const e = k => lastOf(TA.ema(s.c, k));
     L.push(`## ${TF_LABEL[tf]} (${TF_ROLE[tf]}) · ${s.src === 'hl' ? '하이퍼리퀴드 24시간' : '미국 정규장'} · 마지막 봉 ${fdt(s.t[n - 1])}`);
-    L.push(`현재가 ${fp(c)} · RSI14 ${rsi == null ? '-' : rsi.toFixed(1)} · ATR14 ${fp(atr)} · EMA20 ${fp(e(20))} · EMA50 ${fp(e(50))} · EMA200 ${fp(e(200))}`);
+    L.push(`현재가 ${fp(c)} · RSI14 ${rsi == null ? '-' : rsi.toFixed(1)} · ATR14 ${fp(atr)} · EMA10 ${fp(e(10))} · EMA20 ${fp(e(20))} · EMA60 ${fp(e(60))} · EMA120 ${fp(e(120))} · EMA200 ${fp(e(200))} (대시보드 차트 EMA는 10/20/60/120)`);
+    const vAvg = s.v.slice(-21, -1).reduce((a, x) => a + x, 0) / 20;
+    L.push(`거래량: 마지막 봉 ${Math.round(s.v[n - 1])} · 직전 20봉 평균 ${Math.round(vAvg)} (${vAvg ? (s.v[n - 1] / vAvg).toFixed(1) + '배' : '-'})`);
     L.push(`최근 ${TF_BARS[tf]}봉 (시각 시/고/저/종/거래량):`);
     for (let i = Math.max(0, n - TF_BARS[tf]); i < n; i++) L.push(`${fdt(s.t[i])} ${fp(s.o[i])}/${fp(s.h[i])}/${fp(s.l[i])}/${fp(s.c[i])}/${Math.round(s.v[i])}`);
     L.push(`[엘리엇] 지그재그 ${(ew.thr * 100).toFixed(1)}% · 큰 흐름 ${ew.bigDir > 0 ? '상승' : ew.bigDir < 0 ? '하락' : '불명'} · 고점·저점: ` + ew.zz.slice(-8).map(p => `${p.type === 'H' ? '고' : '저'} ${fp(p.p)}(${fdt(s.t[p.i])}${p.provisional ? ',진행' : ''})`).join(' → '));
@@ -49,10 +51,52 @@
     return { text: L.join('\n'), atr, price: c };
   }
 
+  // 차트 분석 탭의 방향성 점수(1시간 ICT 구조 + 4시간 EMA50 + 일봉 EMA20/50)와 방향성 점검표(시장 기준·기초지수)
+  async function contextFor(sym) {
+    if (TA.hasYahoo(sym)) { const [h1, d1] = await Promise.all([TA.loadYahoo(sym, '1h'), TA.loadYahoo(sym, '1d')]); return TA.buildContext(h1, TA.to4h(h1), d1); }
+    const [h1, h4, d1] = await Promise.all([TA.loadHL(sym, '1h'), TA.loadHL(sym, '4h'), TA.loadHL(sym, '1d')]);
+    return TA.buildContext(h1, h4, d1);
+  }
+  const trendOf = s => { const n = s.c.length, c = s.c[n - 1], a = lastOf(TA.ema(s.c, 20)), b = lastOf(TA.ema(s.c, 50)); return a == null || b == null ? '데이터 부족' : c > a && a > b ? '상승 (가격 > EMA20 > EMA50)' : c < a && a < b ? '하락 (가격 < EMA20 < EMA50)' : '혼조'; };
+  async function dashText(sym) {
+    const L = [];
+    try {
+      const ctx = await contextFor(sym), now = ctx(Date.now() / 1000);
+      L.push(`[방향성 점수] ${now.score > 0 ? '+' : ''}${now.score} (${TA.groupName[now.group]}) · ${TA.ctxLabels.map((x, i) => `${x} ${now.f[i] > 0 ? '▲' : now.f[i] < 0 ? '▼' : '–'}`).join(' · ')}`);
+    } catch (e) { L.push('[방향성 점수] 계산 실패: ' + e.message); }
+    const refs = TA.hasYahoo(sym) ? [[TA.PAIR[TA.ETF_OF[sym]], '4h', 'yahoo', '기초지수'], [TA.PAIR[TA.ETF_OF[sym]], '1d', 'yahoo', '기초지수']]
+      : sym.startsWith('xyz:') ? [['xyz:XYZ100', '4h', 'hl', '나스닥100 · 시장 기준'], ['xyz:XYZ100', '1d', 'hl', '나스닥100 · 시장 기준']]
+      : sym !== 'BTC' ? [['BTC', '4h', 'hl', '시장 기준'], ['BTC', '1d', 'hl', '시장 기준']] : [];
+    if (!refs.length) L.push('[방향성 점검표 · 시장 기준] 이 종목(BTC)이 시장 기준이라 따로 비교할 종목이 없음');
+    if (refs.length) {
+      L.push('[방향성 점검표 · 시장 기준]');
+      for (const [s2, tf, src, tag] of refs) {
+        try {
+          const s = await TA.load(s2, tf, src), ew = TA.elliott(s, TA.ewMult[tf]), ict = TA.ict(s), wy = TA.wyckoff(s), dv = TA.divergence(s)[0], t = ew.cands[0];
+          L.push(`- ${TA.dispFull(s2)} ${TF_LABEL[tf]} (${tag}): 추세 ${trendOf(s)} / ICT ${ict.trend > 0 ? '상승' : ict.trend < 0 ? '하락' : '불명'} 구조${ict.lastEvent ? ' ' + ict.lastEvent.kind : ''} / 엘리엇 ${t ? `${t.name} ${t.now} ${t.pct}%` : '-'} / 와이코프 ${wy ? wy.schema + ' ' + wy.phase : '-'} / 다이버전스 ${dv ? dv.name : '없음'} / RSI ${lastOf(TA.rsi(s.c, 14)).toFixed(1)}`);
+        } catch (e) { L.push(`- ${TA.dispFull(s2)} ${TF_LABEL[tf]}: 데이터 오류`); }
+      }
+    }
+    return L.join('\n');
+  }
+
   const isCoin = sym => !TA.hasYahoo(sym) && !TA.hlCoin(sym).startsWith('xyz:');
   async function bj(url) { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); }
+  // 시장 수급 탭과 같은 데이터(1시간·15분) + 거래소별 시장가 + 하이퍼리퀴드. 실패하면 바이낸스만으로 대신합니다.
   async function flowText(sym) {
     if (!isCoin(sym)) return '수급 데이터 없음 (주식은 OI·CVD·펀딩 데이터가 없습니다)';
+    if (U.flowSnapshot) {
+      try {
+        const [h1, m15, ctx] = await Promise.all([U.flowSnapshot(sym, '1h', 12), U.flowSnapshot(sym, '15m', 8), TA.loadCtx().catch(() => ({}))]);
+        const L = [h1, m15];
+        const x = U.cvdxSummary && U.cvdxSummary(sym); L.push(x || '[거래소별 시장가 순매수] 이 기기에 모인 기록 없음 (시장 수급 탭을 열어 두면 모입니다)');
+        const hl = ctx[sym]; if (hl) L.push(`[하이퍼리퀴드] 펀딩(1시간) ${(hl.funding * 100).toFixed(4)}% · OI ${fusd(hl.openInterest * hl.markPx)} · 프리미엄 ${hl.premium != null ? (hl.premium * 100).toFixed(4) + '%' : '-'}`);
+        return L.join('\n\n');
+      } catch (e) { /* 아래 바이낸스 요약으로 */ }
+    }
+    return flowTextBinance(sym);
+  }
+  async function flowTextBinance(sym) {
     const p = sym + 'USDT', F = 'https://fapi.binance.com', L = [];
     const [kl, oi, ls, top, fund, ctx] = await Promise.allSettled([
       bj(`${F}/fapi/v1/klines?symbol=${p}&interval=1h&limit=48`), bj(`${F}/futures/data/openInterestHist?symbol=${p}&period=1h&limit=48`),
@@ -80,6 +124,9 @@
       const L = [`하이퍼리퀴드 이번 달 수익 상위 ${w.traders}명: 롱 ${w.nLong}명 ${fusd(w.longUsd)} (평균 진입 ${fp(w.avgEntryLong)}) · 숏 ${w.nShort}명 ${fusd(w.shortUsd)} (평균 진입 ${fp(w.avgEntryShort)})`];
       if (w.liq.length) L.push('큰 포지션 청산 가격: ' + w.liq.map(x => `${x.side} ${fp(x.liq)}(${fpct(x.distPct, 1)}, ${fusd(x.val)})`).join(', '));
       else L.push('청산 가격이 표시된 포지션 없음 (교차 마진)');
+      const near = (w.liqMap || []).filter(b => Math.abs(b.pct) <= 15);
+      if (near.length) L.push('청산 구간 맵 (현재가 ±15%, 2.5% 칸): ' + near.map(b => `${fpct(b.pct, 1)} ${fp(b.price)} ${b.pct > 0 ? '숏 청산' : '롱 청산'} ${fusd(b.pct > 0 ? b.short : b.long)}`).join(' · '));
+      (w.tracked || []).forEach(t => L.push(`추적 지갑 "${t.label}": ${t.pos.length ? t.pos.map(p => `${p.side > 0 ? '롱' : '숏'} ${fusd(p.val)} 진입 ${fp(p.entry)} 청산가 ${p.liq ? fp(p.liq) : '-'} 미실현 ${fusd(p.upnl)}`).join(', ') : '이 종목 포지션 없음'}${t.log.length ? ' · 최근 변화: ' + t.log.map(c => c.txt).join(', ') : ''}`));
       return L.join('\n');
     } catch (e) { return '고래 데이터를 불러오지 못했습니다: ' + e.message; }
   }
@@ -107,6 +154,11 @@
 7. 이 리포트는 작성 시점부터 72시간 안에 채점된다. 24시간 안에 진입 구간에 안 닿으면 실패다.
 8. 가격 숫자는 아래 데이터에 있는 값이나 그 값으로 계산한 값만 쓴다. 지어내지 않는다.
 9. 매수·매도를 지시하는 말투("사세요") 대신 "롱 관점", "숏 관점"으로 쓴다.
+10. 진입 타점을 정하기 전에 반드시 "되돌림형(pullback)"인지 "즉시형(immediate)"인지 먼저 판단한다. 근거: 15분·1시간 모멘텀(연속 봉 방향, 거래량 배수), 시장 수급의 봉 해석(신규 롱/숏, 숏·롱 청산, 스퀴즈), 선물·현물 CVD 방향, OI 증감, 거래소별 시장가 순매수, 방향성 점수.
+   - 되돌림형: 되돌림이 올 근거가 있을 때만 ICT 구간·피보나치 등 되돌림 자리에 진입한다. 그 자리까지 24시간 안에 올 근거(최근 24시간 가격 범위, 같은 구간을 최근에 되돌린 이력 등)를 entryReason에 숫자로 적는다.
+   - 즉시형: 추세와 수급이 한쪽으로 강해서 되돌림 없이 갈 가능성이 높으면, 진입 구간을 현재가에서 15분 ATR(${fp(a15)}) 1배 이내로 잡고 손절·목표도 그 기준으로 다시 정한다.
+11. 아래 데이터(4개 봉 판독, 방향성 점수·점검표, 시장 수급 1시간·15분, 거래소별 시장가, 하이퍼리퀴드, 고래·청산맵, 추적 지갑)를 모두 검토한다. 판단에 쓰지 않은 데이터나 데이터가 없던 항목은 dataNotes에 이유와 함께 적는다.
+12. 진입·목표·손절이 각각 어떤 분석법·데이터 근거로 정해졌는지 basis에 적는다.
 
 ${RULES}
 
@@ -118,9 +170,13 @@ ${RULES}
   "confidence": 1~5 정수,
   "title": "한 줄 전략, 15자 이내 (예: 저점 위 눌림 매수)",
   "context": "지금 상황 한 줄, 숫자 포함 (예: 최근 3일 79,700~84,300 범위 · 전일 81,300 → 지금 82,200)",
+  "entryType": "pullback 또는 immediate",
+  "entryReason": "왜 되돌림형/즉시형인지, 진입가에 24시간 안에 올 근거 (숫자 포함 두세 문장)",
   "entry": { "low": 숫자, "high": 숫자 },
   "target": 숫자,
   "stop": 숫자,
+  "basis": { "entry": "진입 구간 근거 (분석법·데이터)", "target": "목표 근거", "stop": "손절 근거" },
+  "dataNotes": "판단에 쓰지 않았거나 없던 데이터와 이유 (모두 썼으면 '모두 반영')",
   "confluence": [ { "text": "진입 구간에 겹친 근거, 20자 이내", "view": "elliott|ict|wyckoff|divergence|flow|whale" } ],
   "invalidation": "이렇게 되면 틀린 판단이라는 한 문장",
   "risks": [ "위험 요인 1~3개" ],
@@ -142,6 +198,9 @@ ${RULES}
 현재가 ${fp(d.price)} · 일봉 ATR14 ${fp(a)} · 15분 ATR14 ${fp(a15)}
 
 ${d.tf.map(x => x.text).join('\n\n')}
+
+## 대시보드 방향성 점수·점검표
+${d.dash}
 
 ## 수급 (코인 선물 시장)
 ${d.flow}
@@ -208,15 +267,33 @@ ${d.whale}
       const tf = series.map((s, i) => tfText(s, TFS[i]));
       const s15 = series[3], d1 = series[0];
       const created = Math.floor(Date.now() / 1000);
-      const [flow, whale] = await Promise.all([flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), whaleText(sym)]);
-      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale };
+      const [flow, whale, dash] = await Promise.all([flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), whaleText(sym), dashText(sym).catch(e => '방향성 데이터 오류: ' + e.message)]);
+      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash };
+      // 리포트에 어떤 데이터가 들어갔는지 기록 (화면의 "반영한 데이터")
+      const has = (t, bad) => !!t && !bad.some(b => t.includes(b));
+      const coverage = [
+        ['차트 판독 4개 봉 (엘리엇·ICT·와이코프·다이버전스·종합)', true],
+        ['방향성 점수', has(dash, ['계산 실패'])], ['방향성 점검표 (시장 기준·기초지수)', /점검표/.test(dash)],
+        ['시장 수급 1시간·15분 (OI·선물/현물 CVD·코인베이스 프리미엄·펀딩·롱 비중·봉 해석)', /\[시장 수급\]/.test(flow)],
+        ['거래소별 시장가 순매수', /\[거래소별 시장가 순매수\] [^\n]*\n/.test(flow) && !/모인 기록 없음/.test(flow)],
+        ['하이퍼리퀴드 펀딩·OI', /하이퍼리퀴드/.test(flow)],
+        ['고래 · 상위 트레이더 포지션', has(whale, ['고래 데이터 없음', '불러오지 못했습니다'])], ['청산 구간 맵', /청산 구간 맵/.test(whale)], ['추적 지갑', /추적 지갑/.test(whale)]
+      ];
       const t0 = Date.now();
       const text = await askClaude(buildPrompt(sym, d), n => setStatus(`Claude가 6개 관점을 분석해서 쓰는 중… ${Math.round((Date.now() - t0) / 1000)}초 · ${n.toLocaleString()}자`));
       const c = parseJson(text);
       const plan = finalize(c, d);
       const dt = new Date(created * 1000), pad = v => String(v).padStart(2, '0');
       const id = `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}-${pad(dt.getHours())}${pad(dt.getMinutes())}${pad(dt.getSeconds())}-${TA.disp(sym).replace(/[^A-Za-z0-9]/g, '')}`;
-      const rep = { id, sym, created, price: d.price, atrD: d.atrD, plan, claude: c, result: null, v: 1 };
+      // 차트 분석 탭 "예상 투자 결과"와 같은 계산으로, 이 셋업이 과거 비슷한 상황에서 어땠는지
+      let odds = null;
+      try {
+        const ctx = await contextFor(sym), side = plan.direction === 'long' ? 1 : -1;
+        const r = TA.planEval(s15, ctx, { side, entry: plan.entry, tp: Math.abs(plan.target / plan.entry - 1) * 100, sl: Math.abs(plan.stop / plan.entry - 1) * 100, holdHours: 72, amt: 0, lev: 1 });
+        odds = { fillRate: r.st.fillRate, winRate: r.st.winRate, win: r.st.win, sl: r.st.sl, timeout: r.st.timeout, filled: r.st.filled, tier: r.tier };
+      } catch (e) {}
+      const rep = { id, sym, created, price: d.price, atrD: d.atrD, plan, claude: c, odds, coverage, result: null, v: 2 };
+      plan.entryType = c.entryType === 'immediate' ? 'immediate' : 'pullback';
       await saveReport(rep);
       R.reports[id] = rep; R.cur = id;
       await loadList(); renderList(); render();
@@ -268,7 +345,7 @@ ${d.whale}
   }
   U.reportEvaluate = evaluate; // 확인용
   // 매매 테스트 탭이 같은 데이터 수집·Claude 호출을 씁니다.
-  U.repTools = { loadTf, tfText, flowText, whaleText, askClaude, parseJson, RULES, TFS, TF_LABEL };
+  U.repTools = { loadTf, tfText, flowText, whaleText, dashText, askClaude, parseJson, RULES, TFS, TF_LABEL };
   const STATUS = {
     waiting: ['warn', '진입 대기'], open: ['warn', '진입 · 진행 중'], win: ['good', '성공'], loss: ['bad', '손절 실패'],
     noentry: ['bad', '진입 실패'], timeout: ['flat', '시간 만료']
@@ -359,6 +436,23 @@ ${d.whale}
       el('ol', { class: 'rep-conf' }, (c.confluence || []).map(x => el('li', null, el('span', { text: x.text }), x.view ? chip('flat', VIEW_NAME[x.view] || x.view) : null))),
       el('div', { class: 'rep-k down', text: '이렇게 되면 틀린 판단' }), el('p', { class: 'rep-inv', text: c.invalidation || '' }));
     card.append(el('div', { class: 'rep-body' }, ladder(rep), right));
+    // 진입 타점 판단과 근거 (v2 리포트부터)
+    if (c.entryType || c.basis) {
+      const imm = c.entryType === 'immediate';
+      const kv = el('dl', { class: 'kv' });
+      if (c.entryReason) kv.append(el('dt', { text: '판단 근거' }), el('dd', { style: 'font-family:var(--sans)', text: c.entryReason }));
+      [['진입 근거', 'entry'], ['목표 근거', 'target'], ['손절 근거', 'stop']].forEach(([a, k]) => { if (c.basis && c.basis[k]) kv.append(el('dt', { text: a }), el('dd', { style: 'font-family:var(--sans)', text: c.basis[k] })); });
+      card.append(el('div', { class: 'tt-block' }, el('h3', null, '진입 타점 판단', chip(imm ? 'warn' : 'flat', imm ? '즉시형 · 현재가 근처 진입' : '되돌림형 · 되돌림 자리 진입')), kv));
+    }
+    if (rep.odds) {
+      const o = rep.odds;
+      card.append(el('p', { class: 'note' }, el('b', { text: '대시보드 예상 ' }), `과거 비슷한 상황(${o.tier})에서 72시간 안에 이 진입가 체결 ${(o.fillRate * 100).toFixed(0)}%, 체결된 ${o.filled}번 중 목표 먼저 ${o.win}번 (${(o.winRate * 100).toFixed(0)}%) · 손절 먼저 ${o.sl}번 · 미결 ${o.timeout}번`));
+    }
+    if (rep.coverage) {
+      card.append(el('details', { class: 'rep-cov' }, el('summary', { text: `반영한 데이터 ${rep.coverage.filter(x => x[1]).length}/${rep.coverage.length}` }),
+        el('ul', { class: 'vlist' }, rep.coverage.map(([n, ok]) => el('li', { class: ok ? 'good' : 'bad', text: `${n}${ok ? '' : ' — 없음'}` }))),
+        c.dataNotes ? el('p', { class: 'note', text: 'Claude 메모: ' + c.dataNotes }) : null));
+    }
     card.append(el('div', { class: 'rep-lights' }, (c.views || []).map(v => { const [cls, t] = DIR_CHIP[v.dir] || DIR_CHIP.flat; return el('span', { class: 'rep-light' }, el('span', { class: 'muted', text: VIEW_NAME[v.key] || v.key }), chip(cls, t.split(' ')[0])); })));
     if ((c.risks || []).length) card.append(el('div', { class: 'rep-risk' }, el('b', { text: '⚠ 위험' }), el('ul', null, c.risks.map(x => el('li', { text: x })))));
     if (p.notes.length) card.append(el('ul', { class: 'rep-notes' }, p.notes.map(x => el('li', { text: x }))));
@@ -462,6 +556,12 @@ ${d.whale}
     const byConf = [5, 4, 3, 2, 1].map(k => { const g = done.filter(r => r.plan.confidence === k); return g.length ? [k, g] : null; }).filter(Boolean);
     const tbl = (head, rows) => el('div', { class: 'tblwrap' }, el('table', null, el('thead', null, el('tr', null, head.map((h, i) => el('th', { class: i ? 'r' : '', text: h })))), el('tbody', null, rows)));
     const cols = el('div', { class: 'cols pb' });
+    // 진입 타점 판단별: 되돌림형·즉시형 각각 진입률과 진입 후 익절률
+    const byType = [['pullback', '되돌림형'], ['immediate', '즉시형']].map(([k, nm]) => {
+      const g = done.filter(r => r.plan.entryType === k), ent = g.filter(r => r.result.status !== 'noentry'), w = ent.filter(r => r.result.status === 'win').length, s = g.reduce((t, r) => t + (r.result.r || 0), 0);
+      return el('tr', null, el('td', { text: nm }), el('td', { class: 'r m', text: g.length }), el('td', { class: 'r m', text: g.length ? (ent.length / g.length * 100).toFixed(0) + '%' : '—' }), el('td', { class: 'r m', text: ent.length ? (w / ent.length * 100).toFixed(0) + '%' : '—' }), el('td', { class: 'r m ' + toneOf(s), text: g.length ? fr(s / g.length) : '—' }));
+    });
+    cols.append(el('div', null, el('h3', { text: '진입 타점 판단별' }), tbl(['판단', '개수', '진입률', '진입 후 익절', '평균'], byType), el('p', { class: 'note', text: '판단 기록은 이번 개선 이후 리포트부터 쌓입니다.' })));
     cols.append(el('div', null, el('h3', { text: '확신도별' }), byConf.length ? tbl(['확신도', '개수', '성공률', '평균'], byConf.map(([k, g]) => {
       const s = g.reduce((t, r) => t + (r.result.r || 0), 0);
       return el('tr', null, el('td', { text: stars(k) }), el('td', { class: 'r m', text: g.length }), el('td', { class: 'r m', text: (g.filter(r => r.result.status === 'win').length / g.length * 100).toFixed(0) + '%' }), el('td', { class: 'r m ' + toneOf(s), text: fr(s / g.length) }));

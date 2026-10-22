@@ -344,13 +344,28 @@
   $('#flowIv').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.dataset.v === F.iv) return; F.iv = b.dataset.v; store.set('flowIv', F.iv); load(); });
   $('#flowForm').addEventListener('submit', e => { e.preventDefault(); setCoin($('#flowIn').value); });
 
-  // 질문하기 창에 함께 보낼 요약
-  U.flowContext = function () {
-    const d = F.d; if (!d) return null;
-    const n = d.t.length, last = Math.max(0, n - 12), L = [`[시장 수급] ${F.coin} ${IV[F.iv].label}봉 (바이낸스·바이비트·OKX·코인베이스 공개 데이터)`];
+  // 질문하기 창·리포트에 함께 보낼 요약 (시장 수급 탭과 같은 데이터·계산)
+  function flowSummary(d, coin, ivKey, rows) {
+    const n = d.t.length, last = Math.max(0, n - rows), L = [`[시장 수급] ${coin} ${IV[ivKey].label}봉 (바이낸스·바이비트·OKX·코인베이스 공개 데이터)`];
     for (let i = last; i < n; i++) L.push(`${fdt(d.t[i] / 1000)} 종가 ${fp(d.c[i])} · 가격 ${d.dp[i] == null ? '-' : fpct(d.dp[i] * 100, 2)} · OI ${fusd(d.oiTotal[i])} (${d.doi[i] == null ? '-' : fpct(d.doi[i] * 100, 2)}) ${d.kind[i] ? KIND[d.kind[i]][0] : ''} · 선물 델타 ${coinAmt(d.fSum[i])} · 현물 델타 ${coinAmt(d.sSum[i])} · CB프리미엄 ${d.cbp[i] == null ? '-' : d.cbp[i].toFixed(2)} · 펀딩 ${d.fund[i] == null ? '-' : d.fund[i].toFixed(4) + '%'} · 개인 롱 ${d.lsG[i] == null ? '-' : d.lsG[i].toFixed(1) + '%'} · 탑 롱 ${d.lsT[i] == null ? '-' : d.lsT[i].toFixed(1) + '%'}`);
+    const k = Math.max(0, n - 24), cnt = {};
+    for (let i = k; i < n; i++) if (d.kind[i]) cnt[d.kind[i]] = (cnt[d.kind[i]] || 0) + 1;
+    const ch = (a) => { const x = a[k], y = a[n - 1]; return x && y != null ? fpct((y / x - 1) * 100, 2) : '-'; };
+    const delta = a => { let s = 0, any = false; for (let i = k; i < n; i++) if (a[i] != null) { s += a[i]; any = true; } return any ? coinAmt(s) : '-'; };
+    L.push(`최근 24봉 요약: 가격 ${ch(d.c)} · OI 합계 ${ch(d.oiTotal)} (스테이블 마진 ${ch(d.oiStable)}, 코인 마진 ${ch(d.oiCoin)}) · 선물 시장가 순매수 ${delta(d.fSum)} · 현물 시장가 순매수 ${delta(d.sSum)} · 봉 해석 ${Object.entries(cnt).map(([x, c]) => KIND[x][0] + ' ' + c).join(', ') || '-'}`);
+    const sq = d.squeeze.filter(s => s.i >= k);
+    if (sq.length) L.push('스퀴즈(OI 급감 + 큰 움직임): ' + sq.map(s => `${fdt(d.t[s.i] / 1000)} ${s.up ? '숏 스퀴즈(위로)' : '롱 스퀴즈(아래로)'}`).join(', '));
+    if (d.nextFunding) L.push(`다음 펀딩 ${fdt(d.nextFunding / 1000)} · 예상 펀딩 ${d.fund[n - 1] == null ? '-' : d.fund[n - 1].toFixed(4) + '%'}`);
     L.push(`전체 기간 누적 선물 CVD ${coinAmt(d.cvd_fSum[n - 1])}, 현물 CVD ${coinAmt(d.cvd_sSum[n - 1])}`);
     return L.join('\n');
+  }
+  U.flowContext = function () { return F.d ? flowSummary(F.d, F.coin, F.iv, 12) : null; };
+  // 리포트용: 원하는 코인·봉으로 시장 수급 탭과 같은 데이터를 새로 받아 요약합니다.
+  U.flowSnapshot = async function (coin, ivKey, rows = 12) {
+    const { out, fail } = await fetchAll(coin, ivKey);
+    if (!out.fut || !out.fut.length) throw new Error(`${coin} 바이낸스 선물 데이터 없음`);
+    const d = build(out, ivKey);
+    return flowSummary(d, coin, ivKey, rows) + (fail.length ? `\n(받지 못한 데이터: ${fail.join(', ')})` : '');
   };
 
   // 탭이 처음 열릴 때 시작, 열려 있는 동안 30초마다 갱신

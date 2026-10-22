@@ -237,9 +237,24 @@
     const mark = ps.length ? ps[0].mark : null;
     const liq = ps.filter(p => p.liq).map(p => ({ side: p.side > 0 ? '롱' : '숏', liq: p.liq, val: p.val, distPct: mark ? (p.liq / mark - 1) * 100 : null }))
       .sort((a, b) => b.val - a.val).slice(0, 15);
+    // 청산 구간 맵: 고래 추적 탭과 같은 방식(현재가 대비 2.5% 칸)으로 롱·숏 청산 대기 금액
+    const bins = {};
+    if (mark) ps.filter(p => p.liq).forEach(p => {
+      let d = (p.liq / mark - 1) * 100; d = Math.max(-50, Math.min(50, d));
+      const b = Math.round(d / 2.5) * 2.5, k = b === 0 ? (p.side > 0 ? -2.5 : 2.5) : b;
+      const x = bins[k] || (bins[k] = { long: 0, short: 0 }); if (p.side > 0) x.long += p.val; else x.short += p.val;
+    });
+    const liqMap = Object.entries(bins).map(([k, v]) => ({ pct: +k, price: mark * (1 + k / 100), long: v.long, short: v.short })).sort((a, b) => b.pct - a.pct);
+    // 추적 지갑(고래 추적 탭의 지갑 목록): 이 종목 포지션과 최근 변화
+    const tracked = await pool(wallets, 4, async w => {
+      const x = await positionsOf(w.a);
+      const pos = x.pos.filter(p => p.coin === coin);
+      let log = []; try { log = JSON.parse(store.get('chg.' + w.a, '[]')).filter(c => c.txt.includes(coinName(coin))).slice(0, 3); } catch (e) {}
+      return { label: w.label || short(w.a), pos, log };
+    });
     return { traders: res.filter(Boolean).length, mark, longUsd: sum(long), shortUsd: sum(short), nLong: long.length, nShort: short.length,
       avgEntryLong: long.length ? sum(long.map(p => ({ val: p.val * p.entry }))) / sum(long) : null,
-      avgEntryShort: short.length ? sum(short.map(p => ({ val: p.val * p.entry }))) / sum(short) : null, liq };
+      avgEntryShort: short.length ? sum(short.map(p => ({ val: p.val * p.entry }))) / sum(short) : null, liq, liqMap, tracked: tracked.filter(Boolean) };
   };
 
   // ---------- 시작 ----------

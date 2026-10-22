@@ -170,8 +170,8 @@
   async function marketData(sym) {
     const k = tools(), series = await Promise.all(k.TFS.map(tf => k.loadTf(sym, tf)));
     const tf = series.map((s, i) => k.tfText(s, k.TFS[i]).text);
-    const [flow, whale] = await Promise.all([k.flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), k.whaleText(sym)]);
-    return `${tf.join('\n\n')}\n\n## 수급 (코인 선물 시장)\n${flow}\n\n## 고래·청산맵\n${whale}`;
+    const [flow, whale, dash] = await Promise.all([k.flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), k.whaleText(sym), k.dashText ? k.dashText(sym).catch(() => '') : '']);
+    return `${tf.join('\n\n')}\n\n## 대시보드 방향성 점수·점검표\n${dash}\n\n## 수급 (코인 선물 시장)\n${flow}\n\n## 고래·청산맵\n${whale}`;
   }
   const posText = tr => { const p = tr.plan; return `종목 ${TA.dispFull(tr.sym)} · ${p.direction === 'long' ? '롱' : '숏'} · 진입가 ${fp(p.entry)} (작성 시 현재가 ${fp(tr.price)}) · 익절 ${fp(p.target)} (${p.tpPct}%) · 손절 ${fp(p.stop)} (${p.slPct}%) · 손익비 ${p.rr.toFixed(2)}:1 · 레버리지 ${p.lev}배 · 작성 ${fdt(tr.created)}\n잡은 이유(사용자 메모): ${tr.memo || '없음'}`; };
   const predText = tr => { const x = tr.predict; return x ? `대시보드 예상: 과거 비슷한 상황(${x.tier})에서 7일 안에 결론 난 ${x.win + x.sl}번 중 익절 ${x.win}번 (${x.pWin == null ? '-' : (x.pWin * 100).toFixed(0) + '%'})\n대시보드 판독 요인:\n${(x.factors || []).map(f => `- [${f[0]}] ${f[1]}`).join('\n')}` : '대시보드 예상 없음'; };
