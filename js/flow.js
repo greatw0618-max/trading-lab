@@ -251,7 +251,7 @@
     P.ls.s.g.setData(line(d.lsG)); P.ls.s.t.setData(line(d.lsT));
     if (keep && range) C.charts[0].timeScale().setVisibleLogicalRange(range);
     else { C.charts[0].timeScale().applyOptions({ barSpacing: 5 }); C.charts[0].timeScale().scrollToRealTime(); }
-    hover(null); summary();
+    hover(null); summary(); renderState();
   }
 
   // ---------- 설명 ----------
@@ -312,6 +312,101 @@
   }
   const avg = a => { const v = a.filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
 
+  // ---------- 지금 시장 상태 (가격 × OI) ----------
+  // 최근 1시간(봉 여러 개를 묶음)의 가격·OI 변화로 상태를 나누고, 24시간 중 같은 상태였던 비율과 해석을 보여 줍니다.
+  const STATES = {
+    upOiUp: { tag: '가격 ↑ · OI ↑', title: '상승 추세 강화', mean: '오르면서 포지션이 늘어남. 새 롱이 들어오며 밀어 올리는 흐름', check: ['시장가 매수(CVD)도 같이 늘면 진짜 매수세', 'CVD가 줄면 지정가로 받치는 숏이 쌓이는 중 → 뒤늦게 숏 스퀴즈나 급락 둘 다 가능', '펀딩이 크게 +로 가면 롱 과열'] },
+    dnOiUp: { tag: '가격 ↓ · OI ↑', title: '하락 추세 가속', mean: '내리면서 포지션이 늘어남. 신규 숏이거나, 떨어질 때 롱이 물타기 하는 중', check: ['시장가 매도 우위면 신규 숏이 내리꽂는 중', '시장가 매수 우위인데 가격이 못 오르면 롱이 흡수당하는 중', '개인 롱 비중↑ = 개인이 저가에서 받는 중 (아래로 가면 털릴 물량)', '롱 털림 직후면 위 순서가 바뀜'] },
+    upOiDn: { tag: '가격 ↑ · OI ↓', title: '숏 청산 반등', mean: '오르는데 포지션이 줄어듦. 숏이 터지거나 정리하며 오르는 중 (새 매수는 약할 수 있음)', check: ['OI가 다시 늘기 시작하면 새 롱이 붙는 진짜 상승', 'OI가 계속 줄며 오르면 숏 청산이 끝날 때 멈출 수 있음', '현물 CVD가 같이 오르면 더 믿을 만함'] },
+    dnOiDn: { tag: '가격 ↓ · OI ↓', title: '롱 청산 하락', mean: '내리는데 포지션이 줄어듦. 롱이 털리거나 정리하며 내리는 중', check: ['청산이 몰린 뒤 OI가 바닥을 찍으면 하락이 멈추기 쉬움', '개인 롱 비중이 줄면 털림이 진행 중', '현물 매수가 들어오면 반등 신호'] },
+    flatOiUp: { tag: '가격 → · OI ↑', title: '포지션 쌓이는 중', mean: '가격은 그대로인데 포지션이 늘어남. 양쪽이 힘겨루기 중이라 곧 한쪽으로 크게 흔들릴 수 있음', check: ['어느 쪽이 더 많이 쌓였는지 (롱 비중·CVD)', '쌓인 쪽의 청산 가격대가 가까운지', '돌파 방향으로 청산이 연쇄로 나오기 쉬움'] },
+    flatOiDn: { tag: '가격 → · OI ↓', title: '포지션 정리 중', mean: '가격은 그대로인데 포지션이 줄어듦. 양쪽이 같이 빠지며 관망하는 흐름', check: ['거래가 줄어드는 구간이면 큰 움직임 전 휴식일 수 있음', 'OI가 다시 늘기 시작하는 방향을 확인'] },
+    quiet: { tag: '가격 → · OI →', title: '조용한 구간', mean: '가격과 포지션 모두 큰 변화가 없음', check: ['박스권 위아래 경계 확인', '거래량·OI가 갑자기 늘어나는 봉을 기다림'] }
+  };
+  function stateOf(dp, doi, pTh, oTh) {
+    if (dp == null || doi == null) return null;
+    const pf = Math.abs(dp) < pTh, of = Math.abs(doi) < oTh;
+    if (pf && of) return 'quiet';
+    if (pf) return doi > 0 ? 'flatOiUp' : 'flatOiDn';
+    if (of) return 'quiet';
+    return dp > 0 ? (doi > 0 ? 'upOiUp' : 'upOiDn') : (doi > 0 ? 'dnOiUp' : 'dnOiDn');
+  }
+  function renderState() {
+    const box = $('#flowState'); if (!box || !F.d) return;
+    const d = F.d, n = d.t.length, ms = IV[F.iv].ms, k = Math.max(1, Math.round(36e5 / ms)), day = Math.max(k, Math.round(864e5 / ms));
+    const win = (i, w) => { const a = i - w; if (a < 0 || d.oiTotal[a] == null || d.oiTotal[i] == null) return null; return { dp: d.c[i] / d.c[a] - 1, doi: (d.oiTotal[i] / d.c[i]) / (d.oiTotal[a] / d.c[a]) - 1 }; }; // OI는 코인 수량 기준
+    // 기준: 1시간 가격 변화가 최근 1시간 변화들의 중앙값 절반보다 작으면 "가격 그대로", OI는 0.15% 미만이면 "변화 없음"
+    const hist = []; for (let i = k; i < n; i++) { const w = win(i, k); if (w) hist.push(Math.abs(w.dp)); }
+    hist.sort((a, b) => a - b);
+    const pTh = Math.max(0.0015, (hist[Math.floor(hist.length / 2)] || 0.003) * 0.5), oTh = 0.0015;
+    const now = win(n - 1, k);
+    box.textContent = '';
+    if (!now) { box.append(el('p', { class: 'note pb', text: 'OI 데이터가 부족해 상태를 판단할 수 없습니다.' })); return; }
+    const cur = stateOf(now.dp, now.doi, pTh, oTh), S = STATES[cur];
+    // 24시간 동안 각 봉의 1시간 상태
+    const states = []; for (let i = Math.max(k, n - day); i < n; i++) { const w = win(i, k); states.push({ i, s: w ? stateOf(w.dp, w.doi, pTh, oTh) : null }); }
+    const same = states.filter(x => x.s === cur);
+    let dPx = 0, dOi = 0; same.forEach(x => { dPx += d.c[x.i] - d.c[x.i - 1]; if (d.oiTotal[x.i] != null && d.oiTotal[x.i - 1] != null) dOi += d.oiTotal[x.i] / d.c[x.i] - d.oiTotal[x.i - 1] / d.c[x.i - 1]; });
+    let fc = 0; for (let i = n - k; i < n; i++) if (d.fSum[i] != null) fc += d.fSum[i];
+    const oiCoin = d.oiTotal[n - 1] / d.c[n - 1] - d.oiTotal[n - 1 - k] / d.c[n - 1 - k];
+    let sub = '';
+    if (cur === 'dnOiUp') sub = fc > 0 ? '롱이 들어오는데 가격이 못 올라요' : '신규 숏이 시장가로 내리꽂고 있어요';
+    else if (cur === 'upOiUp') sub = fc > 0 ? '새 롱이 시장가로 밀어 올리고 있어요' : '오르지만 시장가 매수는 약해요 (숏이 쌓이는 중일 수 있어요)';
+    else if (cur === 'upOiDn') sub = '숏이 터지며 올라가는 중이에요';
+    else if (cur === 'dnOiDn') sub = '롱이 털리며 내려가는 중이에요';
+    else if (cur === 'flatOiUp') sub = '어느 쪽이든 크게 흔들릴 수 있어요 · 주의!!';
+    const lsWin = (a) => { const x = a[n - 1 - k], y = a[n - 1]; return x != null && y != null ? `${x.toFixed(1)} → ${y.toFixed(1)}%` : '-'; };
+    const card = el('div', { class: 'st-card st-' + cur },
+      el('div', { class: 'st-top' }, el('span', { class: 'muted', text: S.tag }), chip('warn', `지금 · ${IV[F.iv].label}봉 기준 1시간`)),
+      el('h3', { text: S.title }), sub ? el('p', { class: 'st-sub', text: sub }) : null,
+      el('div', { class: 'muted', style: 'font-size:12.5px', text: '24시간 중 이 상태' }),
+      el('div', { class: 'st-pct m', text: `${states.length ? Math.round(same.length / states.length * 100) : 0}% · ${same.length}봉` }),
+      el('p', { class: 'note m', text: `그동안 가격 ${dPx >= 0 ? '+' : ''}${fp(dPx)} · OI ${dOi >= 0 ? '+' : ''}${Math.round(dOi).toLocaleString()} ${F.coin}` }),
+      el('p', null, el('b', { text: '뜻 · ' }), S.mean),
+      el('div', null, el('b', { text: '확인할 것' }), el('ul', { class: 'vlist' }, S.check.map(x => el('li', { text: x })))),
+      el('p', { class: 'note m', text: `1시간: 가격 ${fpct(now.dp * 100, 2)} · OI ${oiCoin >= 0 ? '+' : ''}${Math.round(oiCoin).toLocaleString()} ${F.coin} (${fpct(now.doi * 100, 2)}, 코인 수량 기준) · 선물 CVD ${coinAmt(fc)}` }),
+      el('p', { class: 'note', text: `들어온 쪽 · 개인 롱 비중 ${lsWin(d.lsG)} · 탑트레이더 롱 ${lsWin(d.lsT)}` }));
+    // 24시간 동안 나머지 상태 비율
+    const cnt = {}; states.forEach(x => { if (x.s) cnt[x.s] = (cnt[x.s] || 0) + 1; });
+    const others = el('div', { class: 'st-others' }, el('div', { class: 'muted', style: 'font-size:12.5px;font-weight:700', text: '24시간 상태 비율' }),
+      ...Object.keys(STATES).filter(s => cnt[s]).sort((a, b) => cnt[b] - cnt[a]).map(s => el('div', { class: 'st-orow' + (s === cur ? ' cur' : '') }, el('span', { text: `${STATES[s].tag} ${STATES[s].title}` }), el('b', { class: 'm', text: `${Math.round(cnt[s] / states.length * 100)}%` }))));
+    box.append(el('div', { class: 'st-wrap' }, card, others, oiAlert(d, k, n)));
+  }
+
+  // ---------- OI 급증 알림 ----------
+  function oiAlert(d, k, n) {
+    const ch = []; const oc = i => d.oiTotal[i] / d.c[i]; // 코인 수량 기준 OI
+    for (let i = k; i < n; i++) if (d.oiTotal[i] != null && d.oiTotal[i - k] != null) ch.push(oc(i) / oc(i - k) - 1);
+    const m = ch.reduce((s, x) => s + x, 0) / (ch.length || 1), sd = Math.sqrt(ch.reduce((s, x) => s + (x - m) ** 2, 0) / (ch.length || 1));
+    const doi = oc(n - 1) / oc(n - 1 - k) - 1, dp = d.c[n - 1] / d.c[n - 1 - k] - 1, z = sd ? (doi - m) / sd : 0;
+    const box = el('div', { class: 'st-alert' });
+    const surge = doi > 0.008 && z >= 2, flat = Math.abs(dp) < 0.005;
+    if (!surge) {
+      box.append(el('div', { class: 'muted', style: 'font-size:12.5px;font-weight:700', text: 'OI 급증 알림' }), el('p', { class: 'note', text: `지금은 없음 · 최근 1시간 OI ${fpct(doi * 100, 2)} (평소 변화의 ${z.toFixed(1)}배 표준편차). 기준: 1시간 OI +0.8% 이상이면서 평소보다 2 표준편차 넘게 늘 때` }));
+      return box;
+    }
+    const price = d.c[n - 1], g = d.lsG[n - 1];
+    let fc = 0; for (let i = n - k; i < n; i++) if (d.fSum[i] != null) fc += d.fSum[i];
+    // 털릴 쪽: 개인 롱 비중이 높거나(55%↑) 시장가 매수로 쌓였으면 롱, 반대면 숏
+    const side = g != null && g >= 55 ? 1 : g != null && g <= 45 ? -1 : fc >= 0 ? 1 : -1;
+    // 25~50배 레버리지로 막 들어온 포지션이 청산되는 가격대 (추정)
+    const lo = side > 0 ? price * (1 - 0.9 / 25) : price * (1 + 0.9 / 50), hi = side > 0 ? price * (1 - 0.9 / 50) : price * (1 + 0.9 / 25);
+    const newOiCoin = oc(n - 1) - oc(n - 1 - k);
+    const shareTop = d.lsT[n - 1] != null ? d.lsT[n - 1] / 100 : 0.5, cexEst = Math.max(0, newOiCoin * (side > 0 ? shareTop : 1 - shareTop));
+    const hlReal = U.whaleLiqIn ? U.whaleLiqIn(hlName(F.coin), Math.min(lo, hi), Math.max(lo, hi), side) : null;
+    box.classList.add('on');
+    box.append(el('div', { class: 'st-top' }, chip('flat', flat ? '보합' : dp > 0 ? '상승 중' : '하락 중'), chip('hot', 'OI 급증')),
+      el('h3', { text: flat ? '가격은 그대로인데 OI가 급하게 늘었어요' : `가격이 ${dp > 0 ? '오르면서' : '내리면서'} OI가 급하게 늘었어요` }),
+      el('p', { text: `최근 1시간 OI ${fpct(doi * 100, 2)} (+${Math.round(newOiCoin).toLocaleString()} ${F.coin}) · 평소보다 ${z.toFixed(1)} 표준편차 · 포지션이 쌓이는 중 → 어느 쪽이든 크게 흔들릴 수 있어요 · 주의!!` }),
+      el('div', { class: 'st-risk' }, el('b', { class: side > 0 ? 'down' : 'up', text: `${side > 0 ? '아래 주의!! · 털릴 롱' : '위 주의!! · 털릴 숏'}` }),
+        el('div', { class: 'm st-zone', text: `${fp(Math.min(lo, hi))} ~ ${fp(Math.max(lo, hi))} ${fpct(((side > 0 ? hi : lo) / price - 1) * 100, 1)}` }),
+        el('div', { class: 'note', text: `(HL 실제 ${hlReal ? `${hlReal.size >= 10 ? Math.round(hlReal.size).toLocaleString() : hlReal.size.toFixed(1)} ${F.coin} · ${hlReal.n}명` : '고래 추적 탭을 열면 집계'} · CEX 추정 ${Math.round(cexEst).toLocaleString()} ${F.coin})` })),
+      el('p', { class: 'note', text: `털릴 쪽은 개인 롱 비중(${g == null ? '-' : g.toFixed(1) + '%'})과 시장가 방향(${coinAmt(fc)})으로 정했어요. 가격대는 막 들어온 25~50배 포지션이 청산되는 자리를 계산한 추정이고, CEX 추정은 늘어난 OI × 탑트레이더 ${side > 0 ? '롱' : '숏'} 비중이에요.` }));
+    return box;
+  }
+  U.flowStateTest = { oiAlert, F, IV }; // 확인용
+  const hlName = c => c; // 하이퍼리퀴드 코인 이름은 바이낸스와 같음 (BTC, ETH …)
+
   // ---------- 불러오기 ----------
   const SRC = { oiBinC: '바이낸스 코인 마진 OI', oiBybL: '바이비트 OI', oiBybI: '바이비트 코인 마진 OI', lsG: '개인 롱 비중', lsT: '탑트레이더 롱 비중', fund: '펀딩', cb: '코인베이스', okxFut: 'OKX 선물', okxOI: 'OKX OI', okxSpot: 'OKX 현물', spot: '바이낸스 현물', oiBinU: '바이낸스 OI' };
   async function load(quiet) {
@@ -346,17 +441,17 @@
 
   // 질문하기 창·리포트에 함께 보낼 요약 (시장 수급 탭과 같은 데이터·계산)
   function flowSummary(d, coin, ivKey, rows) {
-    const n = d.t.length, last = Math.max(0, n - rows), L = [`[시장 수급] ${coin} ${IV[ivKey].label}봉 (바이낸스·바이비트·OKX·코인베이스 공개 데이터)`];
-    for (let i = last; i < n; i++) L.push(`${fdt(d.t[i] / 1000)} 종가 ${fp(d.c[i])} · 가격 ${d.dp[i] == null ? '-' : fpct(d.dp[i] * 100, 2)} · OI ${fusd(d.oiTotal[i])} (${d.doi[i] == null ? '-' : fpct(d.doi[i] * 100, 2)}) ${d.kind[i] ? KIND[d.kind[i]][0] : ''} · 선물 델타 ${coinAmt(d.fSum[i])} · 현물 델타 ${coinAmt(d.sSum[i])} · CB프리미엄 ${d.cbp[i] == null ? '-' : d.cbp[i].toFixed(2)} · 펀딩 ${d.fund[i] == null ? '-' : d.fund[i].toFixed(4) + '%'} · 개인 롱 ${d.lsG[i] == null ? '-' : d.lsG[i].toFixed(1) + '%'} · 탑 롱 ${d.lsT[i] == null ? '-' : d.lsT[i].toFixed(1) + '%'}`);
+    const ca = v => v == null ? '—' : (v > 0 ? '+' : '') + compact(v) + ' ' + coin, n = d.t.length, last = Math.max(0, n - rows), L = [`[시장 수급] ${coin} ${IV[ivKey].label}봉 (바이낸스·바이비트·OKX·코인베이스 공개 데이터)`];
+    for (let i = last; i < n; i++) L.push(`${fdt(d.t[i] / 1000)} 종가 ${fp(d.c[i])} · 가격 ${d.dp[i] == null ? '-' : fpct(d.dp[i] * 100, 2)} · OI ${fusd(d.oiTotal[i])} (${d.doi[i] == null ? '-' : fpct(d.doi[i] * 100, 2)}) ${d.kind[i] ? KIND[d.kind[i]][0] : ''} · 선물 델타 ${ca(d.fSum[i])} · 현물 델타 ${ca(d.sSum[i])} · CB프리미엄 ${d.cbp[i] == null ? '-' : d.cbp[i].toFixed(2)} · 펀딩 ${d.fund[i] == null ? '-' : d.fund[i].toFixed(4) + '%'} · 개인 롱 ${d.lsG[i] == null ? '-' : d.lsG[i].toFixed(1) + '%'} · 탑 롱 ${d.lsT[i] == null ? '-' : d.lsT[i].toFixed(1) + '%'}`);
     const k = Math.max(0, n - 24), cnt = {};
     for (let i = k; i < n; i++) if (d.kind[i]) cnt[d.kind[i]] = (cnt[d.kind[i]] || 0) + 1;
     const ch = (a) => { const x = a[k], y = a[n - 1]; return x && y != null ? fpct((y / x - 1) * 100, 2) : '-'; };
-    const delta = a => { let s = 0, any = false; for (let i = k; i < n; i++) if (a[i] != null) { s += a[i]; any = true; } return any ? coinAmt(s) : '-'; };
+    const delta = a => { let s = 0, any = false; for (let i = k; i < n; i++) if (a[i] != null) { s += a[i]; any = true; } return any ? ca(s) : '-'; };
     L.push(`최근 24봉 요약: 가격 ${ch(d.c)} · OI 합계 ${ch(d.oiTotal)} (스테이블 마진 ${ch(d.oiStable)}, 코인 마진 ${ch(d.oiCoin)}) · 선물 시장가 순매수 ${delta(d.fSum)} · 현물 시장가 순매수 ${delta(d.sSum)} · 봉 해석 ${Object.entries(cnt).map(([x, c]) => KIND[x][0] + ' ' + c).join(', ') || '-'}`);
     const sq = d.squeeze.filter(s => s.i >= k);
     if (sq.length) L.push('스퀴즈(OI 급감 + 큰 움직임): ' + sq.map(s => `${fdt(d.t[s.i] / 1000)} ${s.up ? '숏 스퀴즈(위로)' : '롱 스퀴즈(아래로)'}`).join(', '));
     if (d.nextFunding) L.push(`다음 펀딩 ${fdt(d.nextFunding / 1000)} · 예상 펀딩 ${d.fund[n - 1] == null ? '-' : d.fund[n - 1].toFixed(4) + '%'}`);
-    L.push(`전체 기간 누적 선물 CVD ${coinAmt(d.cvd_fSum[n - 1])}, 현물 CVD ${coinAmt(d.cvd_sSum[n - 1])}`);
+    L.push(`전체 기간 누적 선물 CVD ${ca(d.cvd_fSum[n - 1])}, 현물 CVD ${ca(d.cvd_sSum[n - 1])}`);
     return L.join('\n');
   }
   U.flowContext = function () { return F.d ? flowSummary(F.d, F.coin, F.iv, 12) : null; };

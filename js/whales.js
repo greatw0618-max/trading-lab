@@ -306,7 +306,7 @@
         if (WS.idx > 5) WS.perAcc = (Date.now() - WS.t0) / WS.idx;
         if (WS.idx >= WS.list.length) { WS.idx = 0; WS.t0 = Date.now(); WS.cycle++; WS.scanned = WS.list.length; saveScan(); await buildScanList().catch(() => {}); }
         if (WS.idx % 20 === 0) saveScan();
-        if (Date.now() - WS.lastRender > 4000 && U.activeTab() === 'whale') { WS.lastRender = Date.now(); renderWhaleCard(); renderFeed(); }
+        if (Date.now() - WS.lastRender > 4000 && U.activeTab() === 'whale') { WS.lastRender = Date.now(); renderWhaleCard().then(renderLiqMap); renderFeed(); }
         await new Promise(r => setTimeout(r, 250)); // 하이퍼리퀴드 요청 한도를 넘지 않게 천천히
       }
     } finally { WS.running = false; }
@@ -378,6 +378,49 @@
     box.append(el('p', { class: 'note pb', text: `고래 = 하이퍼리퀴드 계정가치 상위 500 + 이달 수익 상위 60 중 지금 ${coin}를 들고 있는 계정 (메인 무기한 선물). 개인 = 바이낸스 ${coin}USDT 전체 계정 롱숏 비율 (계정 수, 물량 아님). 헤지 추정은 숏·레버리지 5배 이하·청산가 40% 이상 멀거나 없음 기준의 추정입니다.` }));
   }
 
+  // ---------- 고래 청산가 지도 (스캔한 고래 계정의 실제 청산 가격) ----------
+  const niceStep = v => { const p = 10 ** Math.floor(Math.log10(v)), m = v / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; };
+  function liqBins(coin, mark) {
+    const step = niceStep(mark * 0.012), bins = {};
+    WS.list.forEach(acc => {
+      const sn = WS.snap[acc.a], p = sn && sn.p[coin]; if (!p || !p.l) return;
+      if (Math.abs(p.l / mark - 1) > 0.5) return;
+      const k = Math.round(p.l / step) * step, b = bins[k] || (bins[k] = { long: 0, short: 0, nL: 0, nS: 0 });
+      if (p.s > 0) { b.long += Math.abs(p.s); b.nL++; } else { b.short += Math.abs(p.s); b.nS++; }
+    });
+    return { step, rows: Object.entries(bins).map(([k, v]) => ({ price: +k, ...v })).sort((a, b) => b.price - a.price) };
+  }
+  // 다른 탭(시장 수급 OI 급증 알림)에서 쓰는 값: 가격 구간 안에 청산가가 있는 고래 물량
+  U.whaleLiqIn = function (coin, lo, hi, side) {
+    if (!WS.scanned) return null;
+    let size = 0, n = 0;
+    WS.list.forEach(acc => { const sn = WS.snap[acc.a], p = sn && sn.p[coin]; if (!p || !p.l || p.l < lo || p.l > hi) return; if (side && Math.sign(p.s) !== side) return; size += Math.abs(p.s); n++; });
+    return { size, n, scanned: WS.scanned, total: WS.list.length };
+  };
+  function renderLiqMap() {
+    const box = $('#wsLiq'); if (!box) return;
+    const coin = WS.coin, mark = WS.mark[coin];
+    box.textContent = '';
+    if (!mark) { box.append(el('p', { class: 'note pb', text: '현재가를 불러오는 중…' })); return; }
+    const { step, rows } = liqBins(coin, mark);
+    $('#wsLiqNote').textContent = `고래 한 명이 터지면 그 자리에서 대량 청산 · ${step.toLocaleString("en-US")}달러 묶음 · ±50% · 계정가치 상위 500 + 이달 수익 상위 60 · ${coin}`;
+    if (!rows.length) { box.append(el('p', { class: 'note pb', text: '청산가가 표시된 고래 포지션이 아직 없습니다 (교차 마진으로 여유가 크면 청산가가 없습니다).' })); return; }
+    const max = Math.max(...rows.map(r => r.long + r.short));
+    const above = rows.filter(r => r.price > mark), below = rows.filter(r => r.price <= mark);
+    const line = r => {
+      const v = r.long + r.short, isShort = r.short >= r.long;
+      return el('div', { class: 'liq-row' }, el('span', { class: 'm', text: fp(r.price) }),
+        el('span', { class: 'm ' + (r.price > mark ? 'up' : 'down'), text: fpct((r.price / mark - 1) * 100, 1) }),
+        el('span', { class: 'm ' + (isShort ? 'down' : 'up'), text: `${isShort ? '숏' : '롱'} ${fcoin(isShort ? r.short : r.long, coin)} ${isShort ? r.nS : r.nL}명${r.long && r.short ? ` (+${isShort ? '롱' : '숏'} ${fcoin(isShort ? r.long : r.short, coin)})` : ''}` }),
+        el('div', { class: 'track' }, el('div', { class: 'b', style: `width:${Math.max(2, v / max * 100)}%;background:${isShort ? 'var(--down)' : 'var(--up)'}` })));
+    };
+    above.forEach(r => box.append(line(r)));
+    box.append(el('div', { class: 'liq-row now ws-now' }, el('span', { text: '' }), el('span', { text: '' }), el('b', { text: `현재가 ${fp(mark)}` }), el('div', { class: 'track' })));
+    below.forEach(r => box.append(line(r)));
+    const sumUp = above.reduce((t, r) => t + r.short, 0), sumDn = below.reduce((t, r) => t + r.long, 0);
+    box.append(el('p', { class: 'note pb', text: `현재가 위 숏 청산 대기 ${fcoin(sumUp, coin)} · 아래 롱 청산 대기 ${fcoin(sumDn, coin)}. 위쪽 = 가격이 오르면 숏이 강제 청산(숏 스퀴즈), 아래쪽 = 가격이 내리면 롱이 강제 청산. 스캔한 계정만 센 값이라 시장 전체가 아닙니다.` }));
+  }
+
   // ---------- 고래 움직임 피드 ----------
   function renderFeed() {
     const box = $('#wsFeed'); if (!box) return;
@@ -401,7 +444,7 @@
         el('div', { class: 'note', text: `직전 조회 ${fdt(f.prevT)} 이후 변화` })));
     });
   }
-  $('#wsCoin').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; WS.coin = b.dataset.v; store.set('wsCoin', WS.coin); renderWhaleCard(); renderFeed(); });
+  $('#wsCoin').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; WS.coin = b.dataset.v; store.set('wsCoin', WS.coin); renderWhaleCard().then(renderLiqMap); renderFeed(); });
   $('#wsFeedAll').addEventListener('change', renderFeed);
   U.whaleScanTest = { WS, scanOne, renderFeed }; // 확인용
   // 리포트에서 쓸 수 있게: 이 코인의 고래 vs 개인 요약
@@ -417,7 +460,7 @@
 
   // ---------- 시작 ----------
   let started = false, tick = 0;
-  function start() { if (started) return; started = true; loadWallets(); loadAgg(); renderWhaleCard(); renderFeed(); scanLoop(); }
+  function start() { if (started) return; started = true; loadWallets(); loadAgg(); renderWhaleCard().then(renderLiqMap); renderFeed(); scanLoop(); }
   window.addEventListener('tabchange', e => { if (e.detail === 'whale') start(); });
   if (U.activeTab() === 'whale') start();
   setInterval(() => {

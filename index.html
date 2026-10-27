@@ -149,6 +149,11 @@
 </div>
 
 <div class="wrap" id="tab-flow" hidden>
+  <section class="panel" aria-label="지금 시장 상태">
+    <div class="ph"><h2>지금 시장 상태</h2><small>최근 1시간 가격 × OI로 본 상태 · 아래 차트의 코인·봉 주기를 따라갑니다</small></div>
+    <div id="flowState"><p class="note pb">불러오는 중…</p></div>
+  </section>
+
   <section class="panel">
     <div class="ph"><h2>시장 수급</h2><small>OI·시장가 매수/매도·프리미엄·펀딩·롱 비중으로 누가 사고 누가 파는지 보기 · 마우스를 올리면 그 봉 설명 · 8칸이 함께 움직입니다</small></div>
     <div class="controls">
@@ -205,6 +210,11 @@
       <span class="ph-right"><span class="seg" id="wsCoin" role="group" aria-label="코인"><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="XRP">XRP</button><button data-v="HYPE">HYPE</button></span></span>
     </div>
     <div id="wsBody"><p class="note pb">고래 포지션을 불러오는 중…</p></div>
+  </section>
+
+  <section class="panel" aria-label="고래 청산가 지도">
+    <div class="ph"><h2>고래 청산가 지도</h2><small id="wsLiqNote"></small></div>
+    <div class="ws-liq" id="wsLiq"></div>
   </section>
 
   <section class="panel" aria-label="고래 움직임 피드">
