@@ -200,6 +200,20 @@
 </div>
 
 <div class="wrap" id="tab-whale" hidden>
+  <section class="panel" aria-label="고래 vs 개인">
+    <div class="ph"><h2>고래 vs 개인</h2>
+      <span class="ph-right"><span class="seg" id="wsCoin" role="group" aria-label="코인"><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="XRP">XRP</button><button data-v="HYPE">HYPE</button></span></span>
+    </div>
+    <div id="wsBody"><p class="note pb">고래 포지션을 불러오는 중…</p></div>
+  </section>
+
+  <section class="panel" aria-label="고래 움직임 피드">
+    <div class="ph"><h2>고래 움직임 피드</h2>
+      <span class="ph-right"><small>같은 계정을 두 번 조회한 사이 포지션이 약 $25만 이상 바뀐 경우 · 실제 관측값 · 이 PC에서 창이 열려 있던 동안</small><label class="muted" style="font-size:12px"><input type="checkbox" id="wsFeedAll"> 모든 코인</label></span>
+    </div>
+    <div class="ws-feed" id="wsFeed"></div>
+  </section>
+
   <section class="panel">
     <div class="ph"><h2>추적 지갑</h2><small>하이퍼리퀴드는 모든 포지션이 블록체인에 공개됩니다 · 30초마다 갱신</small></div>
     <form class="addform" id="addForm">

@@ -85,8 +85,9 @@ if (-not $SkipLeaderboard) {
       $w = @{}
       foreach ($p in $r.windowPerformances) { $w[$p[0]] = $p[1] }
       $av = [double]$r.accountValue
-      # Skip small accounts and vault/system accounts that did not trade this month.
-      if ($av -lt 100000 -or [double]$w['month'].vlm -lt 1000000) { continue }
+      # Skip small accounts. Accounts that did not trade this month are kept only if they are large (whales holding positions).
+      if ($av -lt 100000) { continue }
+      if ([double]$w['month'].vlm -lt 1000000 -and $av -lt 1000000) { continue }
       [pscustomobject]@{
         a = $r.ethAddress; n = $r.displayName; av = [math]::Round($av)
         dPnl = [math]::Round([double]$w['day'].pnl); wPnl = [math]::Round([double]$w['week'].pnl)
@@ -94,10 +95,11 @@ if (-not $SkipLeaderboard) {
         mRoi = [math]::Round([double]$w['month'].roi, 4); mVlm = [math]::Round([double]$w['month'].vlm)
       }
     }
+    # Whale scan (고래 추적 탭): account value top 500 + this month's PnL top 80 + all-time PnL top 80.
     $top = @()
     $top += $rows | Sort-Object mPnl -Descending | Select-Object -First 80
     $top += $rows | Sort-Object aPnl -Descending | Select-Object -First 80
-    $top += $rows | Sort-Object av -Descending | Select-Object -First 40
+    $top += $rows | Sort-Object av -Descending | Select-Object -First 500
     $seen = @{}; $uniq = foreach ($x in $top) { if (-not $seen[$x.a]) { $seen[$x.a] = 1; $x } }
     Save-Json (Join-Path $DataDir 'leaderboard.json') ([ordered]@{ updated = [DateTimeOffset]::UtcNow.ToString('o'); rows = @($uniq) })
     $log += "leaderboard: $(@($uniq).Count) traders"

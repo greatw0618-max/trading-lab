@@ -257,9 +257,167 @@
       avgEntryShort: short.length ? sum(short.map(p => ({ val: p.val * p.entry }))) / sum(short) : null, liq, liqMap, tracked: tracked.filter(Boolean) };
   };
 
+  // ---------- 고래 스캔: 계정가치 상위 500 + 이달 수익 상위 60, 계정을 하나씩 돌며 다시 조회 ----------
+  // 조회할 때마다 직전 조회와 포지션을 비교해 큰 변화(약 $25만 이상)를 "고래 움직임 피드"에 남깁니다.
+  const WS = { list: [], snap: {}, feed: [], idx: 0, cycle: 0, scanned: 0, running: false, t0: Date.now(), perAcc: null, coin: store.get('wsCoin', 'BTC'), lastRender: 0, retail: {}, mark: {} };
+  const FEED_MIN_USD = 250000, FEED_KEEP = 400;
+  try { WS.snap = JSON.parse(store.get('wscan.snap', '{}')) || {}; WS.feed = JSON.parse(store.get('wscan.feed', '[]')) || []; } catch (e) { WS.snap = {}; WS.feed = []; }
+  const saveScan = () => { store.set('wscan.snap', JSON.stringify(WS.snap)); store.set('wscan.feed', JSON.stringify(WS.feed.slice(0, FEED_KEEP))); };
+  async function buildScanList() {
+    const lb = await loadLB(), rows = lb.rows;
+    const byAv = rows.slice().sort((a, b) => b.av - a.av).slice(0, 500), byM = rows.slice().sort((a, b) => b.mPnl - a.mPnl).slice(0, 60);
+    const smart = new Set(byM.map(r => r.a)), seen = new Set(), list = [];
+    [...byAv, ...byM].forEach(r => { if (seen.has(r.a)) return; seen.add(r.a); list.push({ a: r.a, n: r.n, av: r.av, smart: smart.has(r.a) }); });
+    WS.list = list;
+  }
+  // 메인 무기한 선물만 조회 (코인). 1계정 = 요청 1번.
+  async function scanOne(acc) {
+    const st = await TA.hl({ type: 'clearinghouseState', user: acc.a });
+    const now = Math.floor(Date.now() / 1000), pos = {};
+    st.assetPositions.forEach(ap => {
+      const p = ap.position, szi = +p.szi; if (!szi) return;
+      const val = +p.positionValue;
+      pos[p.coin] = { s: szi, e: +p.entryPx, m: val / Math.abs(szi), l: p.liquidationPx == null ? null : +p.liquidationPx, v: p.leverage ? p.leverage.value : null };
+    });
+    const prev = WS.snap[acc.a];
+    if (prev) {
+      const coins = new Set([...Object.keys(prev.p), ...Object.keys(pos)]);
+      coins.forEach(c => {
+        const a = prev.p[c] ? prev.p[c].s : 0, b = pos[c] ? pos[c].s : 0;
+        if (a === b) return;
+        const mark = (pos[c] || prev.p[c]).m;
+        if (Math.abs(b - a) * mark < FEED_MIN_USD) return;
+        const kind = !a ? (b > 0 ? '롱 신규' : '숏 신규') : !b ? (a > 0 ? '롱 정리' : '숏 정리') : Math.sign(a) !== Math.sign(b) ? '방향 바꿈' : Math.abs(b) > Math.abs(a) ? (b > 0 ? '롱 늘림' : '숏 늘림') : (b > 0 ? '롱 줄임' : '숏 줄임');
+        WS.feed.unshift({ t: now, a: acc.a, coin: c, kind, from: a, to: b, px: mark, lev: (pos[c] || prev.p[c]).v, prevT: prev.t, smart: acc.smart });
+      });
+      if (WS.feed.length > FEED_KEEP) WS.feed.length = FEED_KEEP;
+    }
+    WS.snap[acc.a] = { t: now, p: pos };
+  }
+  async function scanLoop() {
+    if (WS.running) return; WS.running = true;
+    try {
+      if (!WS.list.length) await buildScanList();
+      for (;;) {
+        if (document.hidden) { await new Promise(r => setTimeout(r, 5000)); continue; }
+        const acc = WS.list[WS.idx];
+        try { await scanOne(acc); WS.scanned = Math.max(WS.scanned, WS.idx + 1); } catch (e) { await new Promise(r => setTimeout(r, 3000)); }
+        WS.idx++;
+        if (WS.idx > 5) WS.perAcc = (Date.now() - WS.t0) / WS.idx;
+        if (WS.idx >= WS.list.length) { WS.idx = 0; WS.t0 = Date.now(); WS.cycle++; WS.scanned = WS.list.length; saveScan(); await buildScanList().catch(() => {}); }
+        if (WS.idx % 20 === 0) saveScan();
+        if (Date.now() - WS.lastRender > 4000 && U.activeTab() === 'whale') { WS.lastRender = Date.now(); renderWhaleCard(); renderFeed(); }
+        await new Promise(r => setTimeout(r, 250)); // 하이퍼리퀴드 요청 한도를 넘지 않게 천천히
+      }
+    } finally { WS.running = false; }
+  }
+
+  // ---------- 고래 vs 개인 ----------
+  async function loadRetail(coin) {
+    const hit = WS.retail[coin]; if (hit && Date.now() - hit.at < 120e3) return hit;
+    try {
+      const r = await fetch(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${coin}USDT&period=1h&limit=5`);
+      if (!r.ok) throw new Error(r.status);
+      const x = await r.json(); if (!x.length) throw new Error('없음');
+      const now = x[x.length - 1], ago = x[0];
+      return (WS.retail[coin] = { at: Date.now(), ratio: +now.longShortRatio, long: +now.longAccount * 100, ago: +ago.longAccount * 100 });
+    } catch (e) { return (WS.retail[coin] = { at: Date.now(), err: true }); }
+  }
+  const fcoin = (v, c) => `${Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2)} ${c}`;
+  function whaleStats(coin, mark) {
+    const L = [], S = [];
+    WS.list.forEach(acc => { const sn = WS.snap[acc.a]; const p = sn && sn.p[coin]; if (!p) return; (p.s > 0 ? L : S).push({ ...p, a: acc.a, smart: acc.smart }); });
+    const size = a => a.reduce((t, p) => t + Math.abs(p.s), 0);
+    const avgEntry = a => { const s = size(a); return s ? a.reduce((t, p) => t + p.e * Math.abs(p.s), 0) / s : null; };
+    // 헤지 추정: 숏이면서 레버리지 5배 이하, 청산가가 40% 넘게 멀거나 없음 → 현물을 들고 가격 하락을 막는 숏일 가능성
+    const hedge = S.filter(p => (p.v == null || p.v <= 5) && (p.l == null || (mark && p.l / mark - 1 > 0.4)));
+    const sm = { L: L.filter(p => p.smart), S: S.filter(p => p.smart) };
+    return { L, S, long: size(L), short: size(S), avgL: avgEntry(L), avgS: avgEntry(S), hedge, hedgeSize: size(hedge), sm: { nL: sm.L.length, nS: sm.S.length, long: size(sm.L), short: size(sm.S) } };
+  }
+  async function renderWhaleCard() {
+    const box = $('#wsBody'); if (!box) return;
+    const coin = WS.coin;
+    $$('#wsCoin button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === coin)));
+    let mark = WS.mark[coin];
+    try { const ctx = await TA.loadCtx(); if (ctx[coin]) mark = WS.mark[coin] = +ctx[coin].markPx; } catch (e) {}
+    const st = whaleStats(coin, mark), rt = await loadRetail(coin);
+    box.textContent = '';
+    const tot = st.long + st.short, net = st.long - st.short, lp = tot ? st.long / tot * 100 : 50;
+    const wSide = !tot ? null : net / tot > 0.1 ? 1 : net / tot < -0.1 ? -1 : 0;
+    const rSide = rt.err ? null : rt.long >= 55 ? 1 : rt.long <= 45 ? -1 : 0;
+    const word = s => s > 0 ? '롱 쪽' : s < 0 ? '숏 쪽' : '팽팽';
+    const head = wSide == null ? '고래 포지션을 모으는 중이에요' : rSide == null ? `고래는 ${word(wSide)}이에요` : wSide === rSide && wSide !== 0 ? `고래와 개인 모두 ${word(wSide)}이에요` : wSide !== 0 && rSide !== 0 && wSide !== rSide ? `고래는 ${word(wSide)}, 개인은 ${word(rSide)}으로 갈렸어요` : `고래는 ${word(wSide)}, 개인은 ${word(rSide)}이에요`;
+    const scanTxt = `리더보드 계정 ${WS.scanned}/${WS.list.length} 조회${WS.cycle ? ` · ${WS.cycle}바퀴 완료` : ''} · ${coin} 보유 ${st.L.length + st.S.length}명 · 이 창이 열려 있는 동안 계정을 하나씩 다시 조회 ${WS.perAcc ? ` (한 바퀴 약 ${Math.max(1, Math.round(WS.list.length * WS.perAcc / 60000))}분)` : ''}`;
+    const hero = el('div', { class: 'ws-hero' }, el('h3', { text: head }));
+    if (st.hedge.length && wSide === -1) {
+      const exL = st.long, exS = st.short - st.hedgeSize, exN = exL - exS;
+      hero.append(el('p', { text: `다만 숏 ${st.hedge.length}개(${fcoin(st.hedgeSize, coin)})는 5배 이하 · 청산가가 멀어 현물 헤지일 가능성이 커요 → 방향 베팅과 구분해서 보세요` }),
+        el('p', { class: 'note', text: `헤지 추정을 빼면 롱 ${fcoin(exL, coin)} · 숏 ${fcoin(exS, coin)} → ${exN >= 0 ? '순롱' : '순숏'} ${fcoin(Math.abs(exN), coin)}` }));
+    }
+    hero.append(el('p', { class: 'note', text: scanTxt }));
+    box.append(hero);
+    const bar = (p, title) => el('div', { class: 'lsbar ws-bar', title }, el('i', { style: `width:${p}%;background:var(--up)` }), el('i', { style: `width:${100 - p}%;background:var(--down)` }));
+    const g = el('div', { class: 'ws-grid' });
+    g.append(el('div', { class: 'ws-cell' }, el('div', { class: 'muted', text: 'HL 고래 (실제 포지션)' }),
+      el('div', { class: 'ws-big m' }, `롱 ${fcoin(st.long, coin)} · 숏 ${fcoin(st.short, coin)}`), bar(lp, ''),
+      el('p', { class: 'note' }, `롱 ${lp.toFixed(0)}% · 숏 ${(100 - lp).toFixed(0)}% → `, el('b', { class: toneOf(net), text: `${net >= 0 ? '순롱' : '순숏'} ${fcoin(Math.abs(net), coin)}` }), ` · 롱 ${st.L.length}계정 · 숏 ${st.S.length}계정${mark ? ` · 약 ${fusd(Math.abs(net) * mark)}` : ''}`)));
+    g.append(el('div', { class: 'ws-cell' }, el('div', { class: 'muted', text: '개인 (바이낸스 전체 계정 롱숏 비율)' }),
+      rt.err ? el('p', { class: 'note', text: '바이낸스에 이 코인 선물이 없거나 불러오지 못했습니다.' }) : el('div', { class: 'ws-big m', text: `L/S ${rt.ratio.toFixed(2)}` }),
+      rt.err ? null : bar(rt.long, ''), rt.err ? null : el('p', { class: 'note', text: `롱 ${rt.long.toFixed(0)}% · 숏 ${(100 - rt.long).toFixed(0)}% (계정 수 기준) · 4시간 전 롱 ${rt.ago.toFixed(0)}%` })));
+    const smTot = st.sm.long + st.sm.short;
+    g.append(el('div', { class: 'ws-cell' }, el('div', { class: 'muted', text: '스마트머니 · 이달 수익 상위 60 계정의 방향' }),
+      el('div', { class: 'ws-big m', text: `롱 ${st.sm.nL} · 숏 ${st.sm.nS}` }), bar(smTot ? st.sm.long / smTot * 100 : 50, ''),
+      el('p', { class: 'note', text: `지금 ${coin}를 들고 있는 ${st.sm.nL + st.sm.nS}명 · 물량 롱 ${fcoin(st.sm.long, coin)} · 숏 ${fcoin(st.sm.short, coin)}${smTot ? ` · 돈 잘 버는 고래는 ${st.sm.long >= st.sm.short ? '롱' : '숏'} 쪽이 더 커요` : ''}` })));
+    const pnl = (avg, side) => avg && mark ? (side > 0 ? mark / avg - 1 : avg / mark - 1) * 100 : null;
+    const pl = pnl(st.avgL, 1), ps = pnl(st.avgS, -1);
+    g.append(el('div', { class: 'ws-cell' }, el('div', { class: 'muted', text: `고래 평단 · 물량 가중${mark ? ` · 현재가 ${fp(mark)}` : ''}` }),
+      el('div', { class: 'ws-two' },
+        el('div', null, el('div', { class: 'muted', text: `롱 평단 · ${st.L.length}계정` }), el('div', { class: 'ws-big m', text: st.avgL ? fp(st.avgL) : '—' }), pl == null ? null : el('p', { class: 'note' }, '지금 ', el('b', { class: toneOf(pl), text: fpct(pl, 1) }), pl >= 0 ? ' 이익 · 여유 있게 버티는 중' : ' 손실 · 손절 압박')),
+        el('div', null, el('div', { class: 'muted', text: `숏 평단 · ${st.S.length}계정` }), el('div', { class: 'ws-big m', text: st.avgS ? fp(st.avgS) : '—' }), ps == null ? null : el('p', { class: 'note' }, '지금 ', el('b', { class: toneOf(ps), text: fpct(ps, 1) }), ps >= 0 ? ' 이익' : ' 손실', st.hedge.length ? ` · 헤지 추정 ${fcoin(st.hedgeSize, coin)} 포함` : '')))));
+    box.append(g);
+    box.append(el('p', { class: 'note pb', text: `고래 = 하이퍼리퀴드 계정가치 상위 500 + 이달 수익 상위 60 중 지금 ${coin}를 들고 있는 계정 (메인 무기한 선물). 개인 = 바이낸스 ${coin}USDT 전체 계정 롱숏 비율 (계정 수, 물량 아님). 헤지 추정은 숏·레버리지 5배 이하·청산가 40% 이상 멀거나 없음 기준의 추정입니다.` }));
+  }
+
+  // ---------- 고래 움직임 피드 ----------
+  function renderFeed() {
+    const box = $('#wsFeed'); if (!box) return;
+    const all = $('#wsFeedAll') && $('#wsFeedAll').checked;
+    const rows = WS.feed.filter(f => all || f.coin === WS.coin).slice(0, 80);
+    box.textContent = '';
+    if (!rows.length) { box.append(el('p', { class: 'note pb', text: WS.cycle ? `아직 ${all ? '' : WS.coin + ' '}큰 포지션 변화가 없습니다.` : '첫 바퀴 조회가 끝나면(같은 계정을 두 번 조회해야 비교 가능) 변화가 쌓이기 시작합니다.' })); return; }
+    const name = c => c.replace(/^xyz:/, '');
+    rows.forEach(f => {
+      const sz = v => Math.abs(v) >= 1000 ? Math.round(Math.abs(v)).toLocaleString() : Math.abs(v) >= 10 ? Math.abs(v).toFixed(1) : Math.abs(v).toFixed(2);
+      const up = f.kind.startsWith('롱') ? f.kind.includes('정리') || f.kind.includes('줄임') ? 'bad' : 'good' : f.kind.startsWith('숏') ? f.kind.includes('정리') || f.kind.includes('줄임') ? 'good' : 'bad' : (f.to > 0 ? 'good' : 'bad');
+      const from = f.from ? `${f.from > 0 ? '롱' : '숏'} ${sz(f.from)}` : '없음', to = f.to ? `${f.to > 0 ? '롱' : '숏'} ${sz(f.to)}` : '없음';
+      const tracked = wallets.some(w => w.a === f.a);
+      box.append(el('div', { class: 'ws-feed-row' },
+        el('div', null, el('span', { class: 'm muted', text: fdt(f.t) + ' ' }),
+          el('a', { href: `https://app.hyperliquid.xyz/explorer/address/${f.a}`, target: '_blank', rel: 'noopener', class: 'm', text: short(f.a) }),
+          f.smart ? el('span', { class: 'chip good', style: 'margin-left:4px', text: '이달 수익 상위' }) : null,
+          ` ${name(f.coin)} `, el('b', { class: up === 'good' ? 'up' : 'down', text: `${f.kind} ${from} → ${to}` }),
+          el('span', { class: 'm muted', text: ` @${fp(f.px)}${f.lev ? ' ' + f.lev + 'x' : ''} · ${fusd(Math.abs(f.to - f.from) * f.px)}` }),
+          el('button', { class: 'btn', type: 'button', style: 'margin-left:8px;padding:1px 7px;font-size:12px', disabled: tracked, text: tracked ? '추적 중' : '추적', onclick: e => { wallets.push({ a: f.a, label: '피드 ' + short(f.a) }); saveWallets(); e.target.disabled = true; e.target.textContent = '추적 중'; loadWallets(); } })),
+        el('div', { class: 'note', text: `직전 조회 ${fdt(f.prevT)} 이후 변화` })));
+    });
+  }
+  $('#wsCoin').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; WS.coin = b.dataset.v; store.set('wsCoin', WS.coin); renderWhaleCard(); renderFeed(); });
+  $('#wsFeedAll').addEventListener('change', renderFeed);
+  U.whaleScanTest = { WS, scanOne, renderFeed }; // 확인용
+  // 리포트에서 쓸 수 있게: 이 코인의 고래 vs 개인 요약
+  U.whaleVsRetail = async function (coin) {
+    if (!WS.list.length || !WS.scanned) return null;
+    let mark = null; try { const ctx = await TA.loadCtx(); mark = ctx[coin] ? +ctx[coin].markPx : null; } catch (e) {}
+    const st = whaleStats(coin, mark), rt = await loadRetail(coin);
+    const feed = WS.feed.filter(f => f.coin === coin).slice(0, 8);
+    return `[고래 vs 개인] HL 계정가치 상위 500 + 이달 수익 상위 60 중 ${WS.scanned}/${WS.list.length} 조회: 롱 ${fcoin(st.long, coin)}(${st.L.length}계정, 평단 ${st.avgL ? fp(st.avgL) : '-'}) · 숏 ${fcoin(st.short, coin)}(${st.S.length}계정, 평단 ${st.avgS ? fp(st.avgS) : '-'}) · 헤지 추정 숏 ${fcoin(st.hedgeSize, coin)} · 이달 수익 상위 롱 ${st.sm.nL}명 ${fcoin(st.sm.long, coin)} / 숏 ${st.sm.nS}명 ${fcoin(st.sm.short, coin)}` +
+      (rt.err ? '' : ` · 바이낸스 개인 롱 ${rt.long.toFixed(1)}% (4시간 전 ${rt.ago.toFixed(1)}%)`) +
+      (feed.length ? '\n고래 움직임: ' + feed.map(f => `${fdt(f.t)} ${short(f.a)} ${f.kind} ${f.from.toFixed(2)}→${f.to.toFixed(2)} @${fp(f.px)}`).join(' · ') : '');
+  };
+
   // ---------- 시작 ----------
   let started = false, tick = 0;
-  function start() { if (started) return; started = true; loadWallets(); loadAgg(); }
+  function start() { if (started) return; started = true; loadWallets(); loadAgg(); renderWhaleCard(); renderFeed(); scanLoop(); }
   window.addEventListener('tabchange', e => { if (e.detail === 'whale') start(); });
   if (U.activeTab() === 'whale') start();
   setInterval(() => {

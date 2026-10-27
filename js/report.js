@@ -126,6 +126,7 @@
       else L.push('청산 가격이 표시된 포지션 없음 (교차 마진)');
       const near = (w.liqMap || []).filter(b => Math.abs(b.pct) <= 15);
       if (near.length) L.push('청산 구간 맵 (현재가 ±15%, 2.5% 칸): ' + near.map(b => `${fpct(b.pct, 1)} ${fp(b.price)} ${b.pct > 0 ? '숏 청산' : '롱 청산'} ${fusd(b.pct > 0 ? b.short : b.long)}`).join(' · '));
+      if (U.whaleVsRetail) { const wv = await U.whaleVsRetail(TA.hlCoin(sym)).catch(() => null); if (wv) L.push(wv); }
       (w.tracked || []).forEach(t => L.push(`추적 지갑 "${t.label}": ${t.pos.length ? t.pos.map(p => `${p.side > 0 ? '롱' : '숏'} ${fusd(p.val)} 진입 ${fp(p.entry)} 청산가 ${p.liq ? fp(p.liq) : '-'} 미실현 ${fusd(p.upnl)}`).join(', ') : '이 종목 포지션 없음'}${t.log.length ? ' · 최근 변화: ' + t.log.map(c => c.txt).join(', ') : ''}`));
       return L.join('\n');
     } catch (e) { return '고래 데이터를 불러오지 못했습니다: ' + e.message; }
