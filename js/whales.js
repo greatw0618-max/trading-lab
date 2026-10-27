@@ -455,8 +455,18 @@
     const feed = WS.feed.filter(f => f.coin === coin).slice(0, 8);
     return `[고래 vs 개인] HL 계정가치 상위 500 + 이달 수익 상위 60 중 ${WS.scanned}/${WS.list.length} 조회: 롱 ${fcoin(st.long, coin)}(${st.L.length}계정, 평단 ${st.avgL ? fp(st.avgL) : '-'}) · 숏 ${fcoin(st.short, coin)}(${st.S.length}계정, 평단 ${st.avgS ? fp(st.avgS) : '-'}) · 헤지 추정 숏 ${fcoin(st.hedgeSize, coin)} · 이달 수익 상위 롱 ${st.sm.nL}명 ${fcoin(st.sm.long, coin)} / 숏 ${st.sm.nS}명 ${fcoin(st.sm.short, coin)}` +
       (rt.err ? '' : ` · 바이낸스 개인 롱 ${rt.long.toFixed(1)}% (4시간 전 ${rt.ago.toFixed(1)}%)`) +
-      (feed.length ? '\n고래 움직임: ' + feed.map(f => `${fdt(f.t)} ${short(f.a)} ${f.kind} ${f.from.toFixed(2)}→${f.to.toFixed(2)} @${fp(f.px)}`).join(' · ') : '');
+      (feed.length ? '\n고래 움직임: ' + feed.map(f => `${fdt(f.t)} ${short(f.a)} ${f.kind} ${f.from.toFixed(2)}→${f.to.toFixed(2)} @${fp(f.px)}`).join(' · ') : '') +
+      (() => {
+        if (!mark) return '';
+        const { step, rows } = liqBins(coin, mark), near = rows.filter(r => Math.abs(r.price / mark - 1) <= 0.2);
+        if (!near.length) return '\n[고래 청산가 지도] 현재가 ±20% 안에 청산가가 있는 고래 포지션 없음';
+        return `\n[고래 청산가 지도] ${step.toLocaleString('en-US')}달러 묶음 · 현재가 ${fp(mark)} ±20%: ` + near.map(r => `${fp(r.price)}(${fpct((r.price / mark - 1) * 100, 1)}) ${r.short >= r.long ? `숏 청산 ${fcoin(r.short, coin)} ${r.nS}명` : `롱 청산 ${fcoin(r.long, coin)} ${r.nL}명`}`).join(' · ');
+      })();
   };
+  // 내 컴퓨터 대시보드에서는 어느 탭을 보든 고래 스캔을 시작해 둡니다 (리포트·OI 급증 알림이 바로 쓸 수 있게).
+  setTimeout(async () => {
+    try { const r = await fetch('api/ask/status', { headers: { 'X-Dashboard': '1' }, cache: 'no-store' }); if (r.ok) scanLoop(); } catch (e) {}
+  }, 15000);
 
   // ---------- 시작 ----------
   let started = false, tick = 0;
