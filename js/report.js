@@ -146,26 +146,28 @@
 [사용자] 차트 분석 초보인 데이트레이더. 쉬운 한국어로 쓰고, 전문 용어는 처음 나올 때 괄호로 짧게 풀이한다.
 
 [셋업 규칙 — 반드시 지킨다]
+0. 이 리포트의 목적은 단 하나, **익절로 끝날 확률**을 최대로 하는 것이다. 성적은 "익절 수 ÷ 전체 리포트 수"로 매긴다. 체결 자체는 목표가 아니다(진입 실패도 익절이 아니므로 성적에 포함될 뿐이다). 가장 나쁜 결과는 체결 후 손절이다. 희망이나 관점에 대한 확신을 섞지 말고 데이터로만 판단한다.
 1. 방향은 "long"(롱 관점) 또는 "short"(숏 관점) 중 하나. 관망은 없다. 근거가 약하면 confidence(1~5)를 낮게 준다.
 2. 봉 역할: 일봉 = 배경, 4시간·1시간 = 오늘의 방향, 15분 = 진입 타이밍과 손절. 봉끼리 충돌하면 큰 봉을 우선하고 충돌 사실을 적는다.
-3. 진입 구간: 현재가 ${fp(d.price)}에서 24시간 안에 닿을 수 있는 거리(일봉 ATR ${fp(a)} 이내). 구간 폭은 15분 ATR(${fp(a15)})의 1~3배.
-4. 목표는 1개. 진입 중앙에서 2일 변동폭(일봉 ATR × 2 = ${fp(2 * a)}) 이내이면서 근거 있는 가격(유동성, FVG, 오더블록, 파동 목표, 박스 경계, 청산 밀집 가격 등).
-5. 손절: 15분·1시간 구조(직전 저점·고점, 스윕 저점, 오더블록 등) 바깥.
-6. 손익비 = |목표 − 진입 중앙| ÷ |진입 중앙 − 손절| 이 반드시 ${MIN_RR}.0 이상. 안 나오면 진입 방식·목표·손절을 다시 검토해서 맞춘다. 진입만 유리한 쪽으로 미는 것은 체결 확률을 떨어뜨리므로, 그렇게 할 때는 그 가격에 24시간 안에 올 근거를 entryReason에 숫자로 적는다. 2:1이 나오는 근거 있는 셋업이 정말 없으면 confidence를 1로 둔다.
-7. 이 리포트는 작성 시점부터 72시간 안에 채점된다. 24시간 안에 진입 구간에 안 닿으면 실패다.
+3. 진입 구간: 분석법 근거(오더블록, FVG, OTE, 박스 경계, 파동 구간 등)가 겹치는 합리적인 자리만 쓴다. 체결이 잘 되라고 구간을 넓히지 않는다. 현재가 ${fp(d.price)}에서 24시간 안에 닿을 수 있는 거리(일봉 ATR ${fp(a)} 이내), 구간 폭은 15분 ATR(${fp(a15)})의 1~3배.
+4. 목표는 1개. **손익비 ${MIN_RR}:1 이상이 나오는 가장 가까운 확실한 자리**로 잡는다(반대편 유동성, 바로 앞의 저항·지지, FVG, 오더블록, 박스 경계, 청산 밀집 가격 등). 더 멀리 갈 수 있어 보여도 욕심내서 멀리 잡지 않는다. 진입에서 2일 변동폭(일봉 ATR × 2 = ${fp(2 * a)}) 이내.
+5. 손절: 노이즈(작은 흔들림)에 털리지 않는 자리. 15분·1시간 구조(직전 저점·고점, 스윕 저점, 오더블록 등) 바깥에 15분 ATR(${fp(a15)})의 0.5배 이상 여유를 더 둔다. 같은 고점·저점이 몰린 곳, 청산 구간 맵·고래 청산가 지도에서 청산이 몰린 가격처럼 **유동성이 몰려 세력이 쓸고 갈 자리 바로 앞에는 손절을 두지 않고, 그 너머에 둔다.** basis.stop에 "왜 이 손절이 노이즈로 털리지 않는 자리인지"를 숫자로 쓴다.
+6. 손익비는 **구간 안에서 가장 불리한 체결가**(롱 = 구간 상단, 숏 = 구간 하단) 기준으로 |목표 − 그 가격| ÷ |그 가격 − 손절| 이 반드시 ${MIN_RR}.0 이상. 손절을 넓히면 2:1이 어려워지는데, 그렇다고 손절을 구조 안쪽으로 당기거나 목표를 근거 없이 멀리 두지 않는다. 손절·목표·진입이 모두 합리적이면서 2:1이 나오는 자리가 없으면 confidence를 1로 두고 title과 entryReason에 "좋은 자리 없음"이라고 솔직하게 쓴다.
+7. 채점: 작성 시점부터 72시간. 진입 구간(하단~상단)에 한 번이라도 닿으면 체결(작성 때 이미 구간 안이면 바로 체결), 체결가는 처음 닿은 가격. 24시간 안에 구간에 안 닿으면 진입 실패. 체결 후 목표와 손절 중 먼저 닿은 쪽이 결과다.
 8. 가격 숫자는 아래 데이터에 있는 값이나 그 값으로 계산한 값만 쓴다. 지어내지 않는다.
 9. 매수·매도를 지시하는 말투("사세요") 대신 "롱 관점", "숏 관점"으로 쓴다.
-10. 진입 방식은 네가 모든 데이터를 보고 가장 적중 확률이 높은 것을 고른다. 목표는 "이 리포트가 익절로 끝날 확률"을 최대로 하는 것이다. 희망이나 관점에 대한 확신을 섞지 말고 데이터로만 판단한다.
+10. 진입 방식은 네가 모든 데이터를 보고 **목표까지 갈 확률이 가장 높은** 것을 고른다. 체결이 잘 되는지가 아니라 "체결된 뒤 손절 없이 목표에 닿을 가능성"이 기준이다.
    - 되돌림형(pullback): 현재가보다 유리한 쪽(롱이면 아래, 숏이면 위)의 근거 있는 자리(ICT 구간, 피보나치, 박스 경계 등)에 지정가로 진입. 박스권·추세 약함·반대쪽 유동성 스윕이 먼저 나올 근거가 있을 때.
    - 돌파형(breakout): 현재가보다 불리한 쪽(롱이면 위, 숏이면 아래)의 확인 가격을 넘어서면 진입. 가격이 예측 방향으로 움직여야 체결되므로, 추세·수급·시장 상태가 한쪽으로 강할 때. 손절은 돌파한 구조의 반대편 바깥.
    - 즉시형(immediate): 현재가에서 15분 ATR(${fp(a15)}) 1배 이내 진입. 이미 근거 자리에 와 있고 바로 출발할 근거가 있을 때.
-   - 반드시 알아 둘 것(역선택): 되돌림 지정가는 예측이 맞으면 가격이 바로 가 버려 체결이 안 되고, 예측이 틀릴 때 주로 체결된다. 아래 <지난 리포트 성적>에서 진입 방식별 체결률·익절률을 확인하고, 그 결과를 이번 선택의 근거로 쓴다.
-   - 근거: 15분·1시간 모멘텀(연속 봉 방향, 거래량 배수), 지금 시장 상태, 봉 해석(신규 롱/숏, 청산, 스퀴즈), 선물·현물 CVD, OI 증감, 거래소별 시장가, 방향성 점수, 고래 움직임. entryReason에 왜 이 방식인지와 24시간 안에 진입가에 올 근거를 숫자로 적는다.
+   - 반드시 알아 둘 것(역선택): 되돌림 지정가는 예측이 맞으면 가격이 바로 가 버려 체결이 안 되고, 예측이 틀릴 때 주로 체결되어 손절로 이어지기 쉽다. 아래 <지난 리포트 성적>에서 진입 방식별 익절률·체결 후 손절률과 손절 원인(방향 문제 / 손절 위치 문제)을 확인하고, 같은 실수를 반복하지 않는 쪽을 고른다.
+   - 근거: 15분·1시간 모멘텀(연속 봉 방향, 거래량 배수), 지금 시장 상태, 봉 해석(신규 롱/숏, 청산, 스퀴즈), 선물·현물 CVD, OI 증감, 거래소별 시장가, 방향성 점수, 고래 움직임. entryReason에 왜 이 방식인지, 왜 이 자리에서 손절보다 목표에 먼저 닿을 가능성이 높은지를 숫자로 적는다.
 11. 아래 데이터(4개 봉 판독, 방향성 점수·점검표, 시장 수급 1시간·15분, 지금 시장 상태(가격×OI)·OI 급증 알림, 거래소별 시장가, 하이퍼리퀴드, 고래 vs 개인·스마트머니·고래 평단, 고래 청산가 지도, 고래 움직임 피드, 상위 트레이더 청산맵, 추적 지갑)를 모두 검토한다.
    - 지금 시장 상태가 "하락 추세 가속·롱이 들어오는데 못 오름", "포지션 쌓이는 중" 같은 상태면 진입 타점과 손절 위치에 반영한다 (털릴 쪽 청산 가격대 안쪽에 손절을 두지 않는다).
    - OI 급증 알림이 있으면 털릴 쪽 구간을 목표나 위험 요인에 반영한다.
    - 고래 청산가 지도에서 가까운 큰 청산 구간은 목표 후보(자석)나 손절 위험 구간으로 쓴다. 판단에 쓰지 않은 데이터나 데이터가 없던 항목은 dataNotes에 이유와 함께 적는다.
 12. 진입·목표·손절이 각각 어떤 분석법·데이터 근거로 정해졌는지 basis에 적는다.
+13. 확신도(confidence)는 근거가 같은 방향을 가리키는 정도로 정한다. 6개 관점(엘리엇, ICT, 와이코프, 다이버전스, 수급, 고래) 중 리포트 방향과 같은 관점이 5~6개이고 봉끼리 충돌이 없으면 4~5, 3~4개면 2~3, 2개 이하이거나 큰 봉과 충돌하면 1~2. 아래 <지난 리포트 성적>에서 확신도별·방향별 익절률이 낮았던 경우는 한 단계 낮춘다.
 
 ${RULES}
 
@@ -178,11 +180,11 @@ ${RULES}
   "title": "한 줄 전략, 15자 이내 (예: 저점 위 눌림 매수)",
   "context": "지금 상황 한 줄, 숫자 포함 (예: 최근 3일 79,700~84,300 범위 · 전일 81,300 → 지금 82,200)",
   "entryType": "pullback 또는 breakout 또는 immediate",
-  "entryReason": "왜 되돌림형/즉시형인지, 진입가에 24시간 안에 올 근거 (숫자 포함 두세 문장)",
+  "entryReason": "왜 이 진입 방식인지, 왜 이 자리에서 손절보다 목표에 먼저 닿을 가능성이 높은지 (숫자 포함 두세 문장)",
   "entry": { "low": 숫자, "high": 숫자 },
   "target": 숫자,
   "stop": 숫자,
-  "basis": { "entry": "진입 구간 근거 (분석법·데이터)", "target": "목표 근거", "stop": "손절 근거" },
+  "basis": { "entry": "진입 구간 근거 (분석법·데이터)", "target": "목표 근거 (왜 이 자리가 2:1 이상 중 가장 가까운 확실한 자리인지)", "stop": "손절 근거 (왜 노이즈·유동성 쓸기에 털리지 않는 자리인지)" },
   "dataNotes": "판단에 쓰지 않았거나 없던 데이터와 이유 (모두 썼으면 '모두 반영')",
   "confluence": [ { "text": "진입 구간에 겹친 근거, 20자 이내", "view": "elliott|ict|wyckoff|divergence|flow|whale" } ],
   "invalidation": "이렇게 되면 틀린 판단이라는 한 문장",
@@ -225,6 +227,7 @@ ${d.track}
   function entryTypeOf(rep) {
     const p = rep.plan, dir = p.direction === 'long' ? 1 : -1, near = rep.atr15 ? rep.atr15 : rep.price * 0.0015;
     const off = (p.entry - rep.price) * dir; // 음수 = 유리한 쪽(되돌림), 양수 = 불리한 쪽(돌파)
+    if (rep.price >= p.entryLow && rep.price <= p.entryHigh) return 'immediate'; // 작성 때 이미 구간 안
     return Math.abs(p.entry - rep.price) <= near ? 'immediate' : off < 0 ? 'pullback' : 'breakout';
   }
   const TYPE_NAME = { pullback: '되돌림형', breakout: '돌파형', immediate: '즉시형' };
@@ -232,14 +235,19 @@ ${d.track}
   function trackText() {
     const reps = R.list.map(it => R.reports[it.id]).filter(r => r && r.result && ['win', 'loss', 'noentry', 'timeout'].includes(r.result.status));
     if (!reps.length) return '아직 결과가 난 리포트 없음';
-    const L = [`결과가 난 리포트 ${reps.length}개 (진입 방식은 최종 진입가가 현재가 기준 어느 쪽이었는지로 분류)`];
-    ['pullback', 'breakout', 'immediate'].forEach(k => {
-      const g = reps.filter(r => entryTypeOf(r) === k); if (!g.length) { L.push(`- ${TYPE_NAME[k]}: 아직 없음`); return; }
-      const ent = g.filter(r => r.result.status !== 'noentry'), w = ent.filter(r => r.result.status === 'win').length, ne = g.filter(r => r.result.status === 'noentry');
-      const neRight = ne.filter(r => r.result.dirHit).length, sumR = g.reduce((t, r) => t + (r.result.r || 0), 0);
-      L.push(`- ${TYPE_NAME[k]}: ${g.length}개 · 체결 ${ent.length}개(${Math.round(ent.length / g.length * 100)}%) · 체결 후 익절 ${w}/${ent.length} · 손절 ${ent.filter(r => r.result.status === 'loss').length} · 진입 실패 ${ne.length}개 중 72시간 뒤 방향이 맞았던 것 ${neRight}개 · 합계 ${sumR.toFixed(2)}R`);
-    });
-    ['long', 'short'].forEach(s => { const g = reps.filter(r => r.plan.direction === s); if (g.length) L.push(`- ${s === 'long' ? '롱' : '숏'} 관점 ${g.length}개 · 익절 ${g.filter(r => r.result.status === 'win').length} · 72시간 방향 적중 ${g.filter(r => r.result.dirHit).length}/${g.filter(r => r.result.dirHit != null).length}`); });
+    // 기준은 익절률(익절 ÷ 전체). 체결률은 목표가 아니라 원인을 보는 참고값
+    const line = g => {
+      const w = g.filter(r => r.result.status === 'win').length, ent = g.filter(r => r.result.status !== 'noentry'), sl = ent.filter(r => r.result.status === 'loss').length;
+      const sumR = g.reduce((t, r) => t + (r.result.r || 0), 0);
+      return `${g.length}개 · 익절률 ${Math.round(w / g.length * 100)}% (${w}/${g.length}) · 체결 후 손절률 ${ent.length ? Math.round(sl / ent.length * 100) + '%' : '-'} (${sl}/${ent.length}) · 진입 실패 ${g.length - ent.length} · 평균 ${(sumR / g.length).toFixed(2)}R`;
+    };
+    const L = [`결과가 난 리포트 ${reps.length}개 · 성적 기준은 익절률(익절 ÷ 전체 리포트)`, `- 전체: ${line(reps)}`];
+    const losses = reps.filter(r => r.result.status === 'loss'), lc = losses.filter(r => r.result.afterStop != null);
+    if (lc.length) L.push(`- 손절 원인 (${lc.length}개): 손절 뒤 72시간 안에 목표까지 간 것(손절 위치 문제) ${lc.filter(r => r.result.afterStop).length}개 · 목표까지 안 간 것(방향 문제) ${lc.filter(r => !r.result.afterStop).length}개`);
+    L.push('진입 방식별 (최종 진입 구간이 작성 시 가격 기준 어느 쪽이었는지로 분류):');
+    ['pullback', 'breakout', 'immediate'].forEach(k => { const g = reps.filter(r => entryTypeOf(r) === k); L.push(`- ${TYPE_NAME[k]}: ${g.length ? line(g) : '아직 없음'}`); });
+    ['long', 'short'].forEach(s => { const g = reps.filter(r => r.plan.direction === s); if (g.length) L.push(`- ${s === 'long' ? '롱' : '숏'} 관점: ${line(g)} · 72시간 방향 적중 ${g.filter(r => r.result.dirHit).length}/${g.filter(r => r.result.dirHit != null).length}`); });
+    [5, 4, 3, 2, 1].forEach(k => { const g = reps.filter(r => r.plan.confidence === k); if (g.length) L.push(`- 확신도 ${k}: ${line(g)}`); });
     // 사후 검증(리테스트) 결과: 관점별 맞음/틀림과 최근 교훈
     const rv = reps.filter(r => r.review);
     if (rv.length) {
@@ -248,7 +256,7 @@ ${d.track}
       rv.slice(0, 10).forEach(r => { if (r.review.lesson) L.push(`- ${fdt(r.created)} ${TA.disp(r.sym)} ${r.plan.direction === 'long' ? '롱' : '숏'} → ${r.review.lesson}`); });
     }
     L.push('최근 12개:');
-    reps.slice(0, 12).forEach(r => L.push(`- ${fdt(r.created)} ${TA.disp(r.sym)} ${r.plan.direction === 'long' ? '롱' : '숏'} ${TYPE_NAME[entryTypeOf(r)]} 손익비 ${r.plan.rr.toFixed(2)} → ${({ win: '익절', loss: '손절', noentry: '진입 실패', timeout: '시간 만료' })[r.result.status]}${r.result.dirHit != null ? ` (72시간 방향 ${r.result.dirHit ? '맞음' : '틀림'})` : ''}`));
+    reps.slice(0, 12).forEach(r => L.push(`- ${fdt(r.created)} ${TA.disp(r.sym)} ${r.plan.direction === 'long' ? '롱' : '숏'} 확신도 ${r.plan.confidence} ${TYPE_NAME[entryTypeOf(r)]} 손익비 ${r.plan.rr.toFixed(2)} → ${({ win: '익절', loss: '손절', noentry: '진입 실패', timeout: '시간 만료' })[r.result.status]}${r.result.status === 'loss' && r.result.afterStop != null ? (r.result.afterStop ? ' (손절 뒤 목표 도달 = 손절 위치 문제)' : ' (손절 뒤 목표 미도달 = 방향 문제)') : ''}${r.result.dirHit != null ? ` (72시간 방향 ${r.result.dirHit ? '맞음' : '틀림'})` : ''}`));
     return L.join('\n');
   }
 
@@ -283,17 +291,24 @@ ${d.track}
     if (![lo, hi, target, stop].every(isFinite)) throw new Error('리포트 가격이 숫자가 아닙니다');
     let mid = (lo + hi) / 2;
     if (dir * (target - mid) <= 0 || dir * (mid - stop) <= 0) throw new Error(`${dir > 0 ? '롱' : '숏'} 관점인데 목표·손절 위치가 반대입니다`);
-    let rr = dir * (target - mid) / (dir * (mid - stop));
-    if (rr < MIN_RR - 1e-9) {
-      const m2 = (target + MIN_RR * stop) / (1 + MIN_RR), shift = m2 - mid;
-      lo += shift; hi += shift; mid = m2; rr = MIN_RR;
-      notes.push(`손익비를 ${MIN_RR}:1로 맞추려고 진입 구간을 ${fp(Math.abs(shift))} ${dir > 0 ? '낮췄' : '높였'}습니다.`);
-    }
     const room = Math.abs(mid - stop) * 0.4; // 진입 구간이 손절선에 너무 붙지 않게
     if ((hi - lo) / 2 > room) { lo = mid - room; hi = mid + room; }
+    // 손익비는 구간 안에서 가장 불리한 체결가(롱 = 상단, 숏 = 하단) 기준: 구간 어디서 체결돼도 2:1 이상
+    const worst = () => dir > 0 ? hi : lo, rrAt = e => dir * (target - e) / (dir * (e - stop));
+    let rr = rrAt(worst());
+    if (rr < MIN_RR - 1e-9) {
+      const shift = (target + MIN_RR * stop) / (1 + MIN_RR) - worst();
+      lo += shift; hi += shift;
+      const maxW = 0.6 * Math.abs(worst() - stop); // 옮긴 뒤에도 구간 반대쪽 끝이 손절에 붙지 않게
+      if (hi - lo > maxW) { if (dir > 0) lo = hi - maxW; else hi = lo + maxW; }
+      rr = MIN_RR;
+      notes.push(`구간 어디서 체결돼도 손익비 ${MIN_RR}:1 이상이 되도록 진입 구간을 ${fp(Math.abs(shift))} ${dir > 0 ? '낮췄' : '높였'}습니다.`);
+    }
+    mid = (lo + hi) / 2;
+    const rrBest = rrAt(dir > 0 ? lo : hi);
     if (Math.abs(mid - d.price) > d.atrD) notes.push(`진입 구간이 현재가에서 하루 평균 변동폭(${fp(d.atrD)})보다 멀어 24시간 안에 닿지 않을 수 있습니다.`);
     if (Math.abs(target - mid) > 2 * d.atrD) notes.push(`목표가 이틀 평균 변동폭(${fp(2 * d.atrD)})보다 멀어 72시간 안에 닿기 어려울 수 있습니다.`);
-    return { direction: dir > 0 ? 'long' : 'short', confidence: Math.max(1, Math.min(5, Math.round(+c.confidence || 1))), entryLow: lo, entryHigh: hi, entry: mid, target, stop, rr, notes };
+    return { direction: dir > 0 ? 'long' : 'short', confidence: Math.max(1, Math.min(5, Math.round(+c.confidence || 1))), entryLow: lo, entryHigh: hi, entry: mid, target, stop, rr, rrBest, rrBasis: 'worst', notes };
   }
 
   // ---------- 리포트 만들기 ----------
@@ -336,7 +351,7 @@ ${d.track}
         const r = TA.planEval(s15, ctx, { side, entry: plan.entry, tp: Math.abs(plan.target / plan.entry - 1) * 100, sl: Math.abs(plan.stop / plan.entry - 1) * 100, holdHours: 72, amt: 0, lev: 1 });
         odds = { fillRate: r.st.fillRate, winRate: r.st.winRate, win: r.st.win, sl: r.st.sl, timeout: r.st.timeout, filled: r.st.filled, tier: r.tier };
       } catch (e) {}
-      const rep = { id, sym, created, price: d.price, atrD: d.atrD, atr15: d.atr15, plan, claude: c, odds, coverage, result: null, v: 3 };
+      const rep = { id, sym, created, price: d.price, atrD: d.atrD, atr15: d.atr15, plan, claude: c, odds, coverage, result: null, v: 4 };
       plan.entryTypeClaimed = c.entryType; plan.entryType = entryTypeOf(rep);
       await saveReport(rep);
       R.reports[id] = rep; R.cur = id;
@@ -352,34 +367,44 @@ ${d.track}
     if (!r.ok) throw new Error('리포트 저장 실패 (' + r.status + '). 서버를 다시 켜 주세요.');
   }
 
-  // ---------- 채점 (15분봉, 작성 시점부터 72시간) ----------
+  // ---------- 채점 (작성 시점부터 72시간) ----------
+  // 진입: 진입 구간(하단~상단)에 한 번이라도 닿으면 체결. 작성 때 이미 구간 안이면 작성 시각·가격으로 바로 체결.
+  // 체결가 = 구간에 처음 닿은 가격(봉 시가를 구간 안으로 맞춘 값). 손익(R)은 그 체결가 기준.
+  // 작성 시각이 들어 있는 15분봉의 남은 시간은 1분봉으로 채웁니다.
   async function evaluate(rep) {
     if (rep.result && rep.result.final) return rep.result;
     const now = Date.now() / 1000, t0 = rep.created, p = rep.plan, dir = p.direction === 'long' ? 1 : -1;
     const end = Math.min(now, t0 + RESULT_HOURS * H);
-    const coin = TA.hlCoin(rep.sym);
-    const rows = await TA.hl({ type: 'candleSnapshot', req: { coin, interval: '15m', startTime: Math.floor(t0 / 900) * 900 * 1000, endTime: Math.floor(end * 1000) } });
-    const start = Math.ceil(t0 / 900) * 900;
-    const bars = rows.map(k => ({ t: k.t / 1000, h: +k.h, l: +k.l, c: +k.c })).filter(b => b.t >= start && b.t < t0 + RESULT_HOURS * H);
-    const risk = Math.abs(p.entry - p.stop);
-    let entered = null, outcome = null;
-    for (const b of bars) {
-      const hitS = dir > 0 ? b.l <= p.stop : b.h >= p.stop, hitT = dir > 0 ? b.h >= p.target : b.l <= p.target;
+    const coin = TA.hlCoin(rep.sym), start = Math.ceil(t0 / 900) * 900;
+    const [rows, gap] = await Promise.all([
+      TA.hl({ type: 'candleSnapshot', req: { coin, interval: '15m', startTime: Math.floor(t0 / 900) * 900 * 1000, endTime: Math.floor(end * 1000) } }),
+      start > t0 ? TA.hl({ type: 'candleSnapshot', req: { coin, interval: '1m', startTime: Math.ceil(t0 / 60) * 60 * 1000, endTime: Math.floor(Math.min(start, end) * 1000) } }).catch(() => []) : []]);
+    const toBar = k => ({ t: k.t / 1000, o: +k.o, h: +k.h, l: +k.l, c: +k.c });
+    const bars = [...gap.map(toBar).filter(b => b.t >= Math.ceil(t0 / 60) * 60 && b.t < start),
+      ...rows.map(toBar).filter(b => b.t >= start && b.t < t0 + RESULT_HOURS * H)];
+    const lo = p.entryLow, hi = p.entryHigh;
+    let entered = null, fill = null, outcome = null, k = 0;
+    if (rep.price >= lo && rep.price <= hi) { entered = t0; fill = rep.price; }
+    for (; k < bars.length; k++) {
+      const b = bars[k], hitS = dir > 0 ? b.l <= p.stop : b.h >= p.stop, hitT = dir > 0 ? b.h >= p.target : b.l <= p.target;
       if (!entered) {
         if (b.t >= t0 + ENTRY_HOURS * H) break;
-        if (b.l <= p.entry && b.h >= p.entry) { entered = b.t; if (hitS) { outcome = { status: 'loss', at: b.t }; break; } }
+        if (b.l <= hi && b.h >= lo) { entered = b.t; fill = Math.min(hi, Math.max(lo, b.o)); if (hitS) { outcome = { status: 'loss', at: b.t }; break; } }
         continue;
       }
       if (hitS) { outcome = { status: 'loss', at: b.t }; break; } // 같은 봉에서 둘 다 닿으면 손절로
       if (hitT) { outcome = { status: 'win', at: b.t }; break; }
     }
     const last = bars[bars.length - 1], done72 = now >= t0 + RESULT_HOURS * H;
+    const risk = fill != null ? Math.abs(fill - p.stop) : null, rrFill = fill != null ? dir * (p.target - fill) / risk : null;
     let status, rMult = null;
-    if (outcome) { status = outcome.status; rMult = status === 'win' ? p.rr : -1; }
+    if (outcome) { status = outcome.status; rMult = status === 'win' ? rrFill : -1; }
     else if (!entered) { status = now >= t0 + ENTRY_HOURS * H ? 'noentry' : 'waiting'; rMult = status === 'noentry' ? 0 : null; }
-    else if (done72) { status = 'timeout'; rMult = last ? dir * (last.c - p.entry) / risk : 0; }
-    else { status = 'open'; rMult = last ? dir * (last.c - p.entry) / risk : 0; }
-    const res = { status, r: rMult, entered, at: outcome ? outcome.at : null, last: last ? last.c : null, final: done72, checked: Math.floor(now) };
+    else if (done72) { status = 'timeout'; rMult = last ? dir * (last.c - fill) / risk : 0; }
+    else { status = 'open'; rMult = last ? dir * (last.c - fill) / risk : 0; }
+    const res = { status, r: rMult, entered, fill, rr: rrFill, at: outcome ? outcome.at : null, last: last ? last.c : null, final: done72, checked: Math.floor(now), rule: 2 };
+    // 손절 원인: 손절 뒤 72시간 안에 목표까지 갔으면 "손절 위치" 문제, 안 갔으면 "방향" 문제
+    if (done72 && status === 'loss') res.afterStop = bars.slice(k + 1).some(b => dir > 0 ? b.h >= p.target : b.l <= p.target);
     if (done72 && last) {
       res.price72 = last.c; res.move = Math.sign(last.c - rep.price);
       res.dirHit = dir * (last.c - rep.price) > 0;
@@ -396,6 +421,19 @@ ${d.track}
   };
   const fr = v => v == null ? '' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2) + 'R';
   const statusChip = res => { if (!res) return chip('flat', '채점 전'); const [c, t] = STATUS[res.status]; return chip(c, t + (res.r != null && res.status !== 'waiting' ? ' ' + fr(res.r) : '')); };
+  // 예전 리포트의 손절 원인(손절 뒤 목표 도달 여부)은 화면에서만 계산합니다 (파일은 그대로).
+  async function afterStopOf(rep) {
+    const p = rep.plan, dir = p.direction === 'long' ? 1 : -1, end = rep.created + RESULT_HOURS * H;
+    const rows = await TA.hl({ type: 'candleSnapshot', req: { coin: TA.hlCoin(rep.sym), interval: '15m', startTime: rep.result.at * 1000 + 900000, endTime: end * 1000 } });
+    return rows.some(k => k.t / 1000 < end && (dir > 0 ? +k.h >= p.target : +k.l <= p.target));
+  }
+  // 하이퍼리퀴드 요청이 몰리지 않게 하나씩
+  const afterTried = new Set();
+  async function fillAfterStop() {
+    const todo = R.list.map(it => R.reports[it.id]).filter(r => r && r.result && r.result.final && r.result.status === 'loss' && r.result.afterStop == null && !afterTried.has(r.id));
+    for (const rep of todo) { afterTried.add(rep.id); const v = await afterStopOf(rep).catch(() => null); if (v != null) rep.result.afterStop = v; }
+    if (todo.length) renderScore();
+  }
   async function scoreAll() {
     await Promise.all(R.list.map(async it => {
       const rep = await getReport(it.id).catch(() => null); if (!rep) return;
@@ -426,7 +464,7 @@ ${d.track}
     const r = rep.result || {};
     return `작성 ${fdt(t0)} 가격 ${fp(rep.price)} → 4시간 뒤 ${fp(at(4))} · 24시간 뒤 ${fp(at(24))} · 72시간 뒤 ${fp(at(72))}
 72시간 최고 ${fp(hi)} (${fdt(hiT)}) · 최저 ${fp(lo)} (${fdt(loT)})
-채점 결과: ${({ win: '익절', loss: '손절', noentry: '진입 실패', timeout: '시간 만료' })[r.status] || r.status}${r.entered ? ` · 진입 ${fdt(r.entered)}` : ''}${r.at ? ` · ${r.status === 'win' ? '익절' : '손절'} ${fdt(r.at)}` : ''} · ${r.r != null ? r.r.toFixed(2) + 'R' : ''} · 72시간 방향 ${r.dirHit == null ? '-' : r.dirHit ? '맞음' : '틀림'}
+채점 결과: ${({ win: '익절', loss: '손절', noentry: '진입 실패', timeout: '시간 만료' })[r.status] || r.status}${r.entered ? ` · 진입 ${fdt(r.entered)}${r.fill != null ? ' 체결가 ' + fp(r.fill) : ''}` : ''}${r.at ? ` · ${r.status === 'win' ? '익절' : '손절'} ${fdt(r.at)}` : ''} · ${r.r != null ? r.r.toFixed(2) + 'R' : ''} · 72시간 방향 ${r.dirHit == null ? '-' : r.dirHit ? '맞음' : '틀림'}${r.status === 'loss' && r.afterStop != null ? ` · 손절 뒤 72시간 안에 목표 ${r.afterStop ? '도달' : '미도달'}` : ''}
 리포트에 나온 가격이 처음 닿은 시각:
 ${levels.map(([n, v]) => `- ${n} ${fp(v)}: ${touch(v)}`).join('\n')}
 작성 후 1시간봉 (시각 시/고/저/종):
@@ -445,12 +483,13 @@ ${path}`;
 { "verdict": "한 줄 총평",
   "directionCheck": "방향 판단이 맞았는지와 이유",
   "entryCheck": "진입 방식(되돌림/돌파/즉시)과 진입 가격 선택이 맞았는지, 실제로 가격이 어떤 순서로 움직였는지",
-  "stopCheck": "손절 위치가 적절했는지 (너무 가까웠나, 구조 안쪽이었나)",
+  "stopCheck": "손절 위치가 적절했는지 (너무 가까웠나, 구조 안쪽이었나, 유동성이 몰린 자리 바로 앞이었나)",
+  "stopCause": "손절로 끝났으면 '방향' (손절 뒤에도 계속 반대로 감) 또는 '위치' (털린 뒤 목표 쪽으로 감), 손절이 아니면 '해당없음'",
   "targetCheck": "목표가가 적절했는지 (너무 멀었나, 더 가까운 근거가 있었나)",
   "views": { "elliott": { "result": "맞음|틀림|판단불가", "why": "한두 문장" }, "ict": {...}, "wyckoff": {...}, "divergence": {...}, "flow": {...}, "whale": {...} },
   "luck": "결과에 운이 크게 작용했는지 (예: 근거는 틀렸는데 우연히 맞음)",
   "missed": ["작성 때 데이터에 있었는데 놓친 신호"],
-  "lesson": "다음 리포트에 쓸 교훈 한 줄 (구체적으로)" }
+  "lesson": "다음 리포트의 익절 확률을 높이기 위한 교훈 한 줄 (진입·손절·목표·방향 중 무엇을 어떻게, 구체적으로)" }
 
 <원래 리포트>
 ${orig}
@@ -548,8 +587,10 @@ ${await retestData(rep)}
     card.append(el('div', { class: 'rep-title' }, el('span', { class: 'rep-badge ' + (long ? 'up' : 'down'), text: long ? '▲ 롱 관점' : '▼ 숏 관점' }), el('h2', { text: c.title || '' })));
     card.append(el('p', { class: 'rep-ctx', text: c.context || '' }));
     const right = el('div', { class: 'rep-right' },
-      el('div', { class: 'rep-k', text: '손익비' }), el('div', { class: 'rep-rr m', text: `${p.rr.toFixed(1)} : 1` }),
-      el('div', { class: 'rep-sub', text: `진입 중앙 ${fp(p.entry)} 기준 · ${fpct((p.target / p.entry - 1) * 100, 2)} / ${fpct((p.stop / p.entry - 1) * 100, 2)} · 확신도 ${stars(p.confidence)}` }),
+      el('div', { class: 'rep-k', text: p.rrBasis === 'worst' ? '손익비 (최소)' : '손익비' }), el('div', { class: 'rep-rr m', text: `${p.rr.toFixed(1)} : 1` }),
+      el('div', { class: 'rep-sub', text: p.rrBasis === 'worst'
+        ? `가장 불리한 체결가 ${fp(long ? p.entryHigh : p.entryLow)} 기준 · 유리하게 체결되면 ${p.rrBest.toFixed(1)} : 1 · 확신도 ${stars(p.confidence)}`
+        : `진입 중앙 ${fp(p.entry)} 기준 · ${fpct((p.target / p.entry - 1) * 100, 2)} / ${fpct((p.stop / p.entry - 1) * 100, 2)} · 확신도 ${stars(p.confidence)}` }),
       el('div', { class: 'rep-k', text: `진입 구간에 겹친 근거 ${(c.confluence || []).length}가지` }),
       el('ol', { class: 'rep-conf' }, (c.confluence || []).map(x => el('li', null, el('span', { text: x.text }), x.view ? chip('flat', VIEW_NAME[x.view] || x.view) : null))),
       el('div', { class: 'rep-k down', text: '이렇게 되면 틀린 판단' }), el('p', { class: 'rep-inv', text: c.invalidation || '' }));
@@ -621,7 +662,7 @@ ${await retestData(rep)}
     const rv = rep.review;
     if (rv) {
       const kv = el('dl', { class: 'kv' });
-      [['방향', rv.directionCheck], ['진입', rv.entryCheck], ['손절', rv.stopCheck], ['목표', rv.targetCheck], ['운', rv.luck]].forEach(([a, b]) => { if (b) kv.append(el('dt', { text: a }), el('dd', { style: 'font-family:var(--sans)', text: b })); });
+      [['방향', rv.directionCheck], ['진입', rv.entryCheck], ['손절', rv.stopCheck], ['손절 원인', rv.stopCause && rv.stopCause !== '해당없음' ? rv.stopCause + ' 문제' : ''], ['목표', rv.targetCheck], ['운', rv.luck]].forEach(([a, b]) => { if (b) kv.append(el('dt', { text: a }), el('dd', { style: 'font-family:var(--sans)', text: b })); });
       const vt = el('dl', { class: 'kv' });
       VIEWS.forEach(([k, nm]) => { const v = rv.views && rv.views[k]; if (!v) return; vt.append(el('dt', null, nm + ' ', chip(v.result === '맞음' ? 'good' : v.result === '틀림' ? 'bad' : 'flat', v.result)), el('dd', { style: 'font-family:var(--sans)', text: v.why || '' })); });
       rvBox.append(el('div', { class: 'pb rep-sum' }, el('p', null, el('b', { text: rv.verdict || '' })), kv, el('h3', { text: '관점별 검증' }), vt,
@@ -645,8 +686,9 @@ ${await retestData(rep)}
   function resultBox(rep) {
     const r = rep.result, p = rep.plan;
     const L = [];
-    if (r.entered) L.push(`진입 ${fdt(r.entered)} (${fp(p.entry)})`); else if (r.status === 'waiting') L.push(`진입 대기 · ${fdt(rep.created + ENTRY_HOURS * H)}까지`);
+    if (r.entered) L.push(`진입 ${fdt(r.entered)} (${fp(r.fill != null ? r.fill : p.entry)}${r.rr != null ? ` · 이 체결가 손익비 ${r.rr.toFixed(1)}:1` : ''})`); else if (r.status === 'waiting') L.push(`진입 대기 · ${fdt(rep.created + ENTRY_HOURS * H)}까지`);
     if (r.at) L.push(`${r.status === 'win' ? '목표' : '손절'} 도달 ${fdt(r.at)}`);
+    if (r.status === 'loss' && r.afterStop != null) L.push(r.afterStop ? '손절 뒤 목표 도달 (손절 위치 문제)' : '손절 뒤 목표 미도달 (방향 문제)');
     if (r.last != null) L.push(`${r.final ? '72시간 시점' : '지금'} ${fp(r.last)}`);
     if (r.final && r.dirHit != null) L.push(`방향 ${r.dirHit ? '적중 ↗' : '빗나감'}`);
     if (!r.final) L.push(`최종 채점 ${fdt(rep.created + RESULT_HOURS * H)}`);
@@ -681,7 +723,7 @@ ${await retestData(rep)}
   // ---------- 성적표 ----------
   function renderScore() {
     const box = $('#repScore'); box.textContent = '';
-    box.append(el('div', { class: 'ph' }, el('h2', { text: '백테스트 성적표' }), el('small', { text: `성공 = 진입 후 목표 먼저 · 손절 실패 −1R · 진입 실패(${ENTRY_HOURS}시간 안 미진입) 0R · 시간 만료 = ${RESULT_HOURS}시간 시점 가격으로 계산` })));
+    box.append(el('div', { class: 'ph' }, el('h2', { text: '백테스트 성적표' }), el('small', { text: `기준 = 익절률 (익절 ÷ 전체 리포트) · 익절 = 체결 후 목표 먼저 · 손절 −1R · 진입 실패(${ENTRY_HOURS}시간 안에 구간 미도달) 0R · 시간 만료 = ${RESULT_HOURS}시간 시점 가격으로 계산` })));
     const reps = R.list.map(it => R.reports[it.id]).filter(r => r && r.result);
     const done = reps.filter(r => ['win', 'loss', 'noentry', 'timeout'].includes(r.result.status));
     const fin = reps.filter(r => r.result.final);
@@ -690,26 +732,38 @@ ${await retestData(rep)}
     const sumR = done.reduce((t, r) => t + (r.result.r || 0), 0);
     const tile = (k, v, sub, cls) => el('div', { class: 'tile' }, el('div', { class: 'k', text: k }), el('div', { class: 'v ' + (cls || ''), text: v }), el('div', { class: 's', text: sub }));
     const dirN = fin.filter(r => r.result.dirHit != null), dirHit = dirN.filter(r => r.result.dirHit).length;
+    const entN = done.length - cnt('noentry'), pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
     box.append(el('div', { class: 'tiles' },
-      tile('판정 끝난 리포트', String(done.length), `진행 중 ${reps.length - done.length}개`),
-      tile('성공률', done.length ? (cnt('win') / done.length * 100).toFixed(0) + '%' : '—', `성공 ${cnt('win')} · 손절 ${cnt('loss')} · 진입 실패 ${cnt('noentry')} · 시간 만료 ${cnt('timeout')}`),
-      tile('합계', fr(sumR) || '0R', '1R = 손절 한 번에 잃는 금액', toneOf(sumR)),
-      tile('기대값', done.length ? fr(sumR / done.length) : '—', '리포트 1개당 평균', toneOf(sumR)),
+      tile('익절률', pct(cnt('win'), done.length), `리포트 ${done.length}개 중 익절 ${cnt('win')}개 · 진행 중 ${reps.length - done.length}개`, cnt('win') ? 'up' : ''),
+      tile('체결 후 손절률', pct(cnt('loss'), entN), `체결 ${entN}개 중 손절 ${cnt('loss')} · 시간 만료 ${cnt('timeout')}`),
+      tile('진입 실패율', pct(cnt('noentry'), done.length), `${ENTRY_HOURS}시간 안에 구간에 안 닿음 ${cnt('noentry')}개`),
+      tile('합계', fr(sumR) || '0R', `리포트 1개당 평균 ${done.length ? fr(sumR / done.length) : '—'} · 1R = 손절 한 번`, toneOf(sumR)),
       tile('방향 적중률', dirN.length ? (dirHit / dirN.length * 100).toFixed(0) + '%' : '—', `${RESULT_HOURS}시간 뒤 추천 방향으로 갔는지 · ${dirN.length}개`)));
-    // 확신도별
-    const byConf = [5, 4, 3, 2, 1].map(k => { const g = done.filter(r => r.plan.confidence === k); return g.length ? [k, g] : null; }).filter(Boolean);
     const tbl = (head, rows) => el('div', { class: 'tblwrap' }, el('table', null, el('thead', null, el('tr', null, head.map((h, i) => el('th', { class: i ? 'r' : '', text: h })))), el('tbody', null, rows)));
+    // 한 그룹의 줄: 개수 · 익절률 · 체결 후 손절률 · 진입 실패 · 평균
+    const HEAD = ['개수', '익절률', '체결 후 손절', '진입 실패', '평균'];
+    const grow = (label, g) => {
+      const ent = g.filter(r => r.result.status !== 'noentry'), w = g.filter(r => r.result.status === 'win').length, s = g.reduce((t, r) => t + (r.result.r || 0), 0);
+      return el('tr', null, el('td', { text: label }), el('td', { class: 'r m', text: g.length }), el('td', { class: 'r m', text: pct(w, g.length) }),
+        el('td', { class: 'r m', text: pct(ent.filter(r => r.result.status === 'loss').length, ent.length) }), el('td', { class: 'r m', text: g.length - ent.length }),
+        el('td', { class: 'r m ' + toneOf(s), text: g.length ? fr(s / g.length) : '—' }));
+    };
+    // 규칙별 비교: 익절 확률 기준 규칙(v4, 10/27~)과 그 전
+    const v4 = done.filter(r => (r.v || 1) >= 4), old = done.filter(r => (r.v || 1) < 4);
+    box.append(el('div', { class: 'pb' }, el('h3', { text: '규칙별 비교' }), tbl(['리포트 규칙', ...HEAD], [grow('익절 확률 기준 (v4)', v4), grow('그 전 (v1~v3)', old)]),
+      el('p', { class: 'note', text: 'v4부터 목표는 익절 확률, 손익비는 구간 안 가장 불리한 체결가 기준, 손절은 노이즈·유동성 바깥, 목표는 2:1 이상 중 가장 가까운 자리입니다. 진입은 구간에 닿으면 체결로 채점합니다 (그 전 리포트 중 이미 끝난 것은 예전 채점 그대로).' })));
     const cols = el('div', { class: 'cols pb' });
-    // 진입 타점 판단별: 되돌림형·즉시형 각각 진입률과 진입 후 익절률
-    const byType = [['pullback', '되돌림형'], ['breakout', '돌파형'], ['immediate', '즉시형']].map(([k, nm]) => {
-      const g = done.filter(r => entryTypeOf(r) === k), ent = g.filter(r => r.result.status !== 'noentry'), w = ent.filter(r => r.result.status === 'win').length, s = g.reduce((t, r) => t + (r.result.r || 0), 0);
-      return el('tr', null, el('td', { text: nm }), el('td', { class: 'r m', text: g.length }), el('td', { class: 'r m', text: g.length ? (ent.length / g.length * 100).toFixed(0) + '%' : '—' }), el('td', { class: 'r m', text: ent.length ? (w / ent.length * 100).toFixed(0) + '%' : '—' }), el('td', { class: 'r m ' + toneOf(s), text: g.length ? fr(s / g.length) : '—' }));
-    });
-    cols.append(el('div', null, el('h3', { text: '진입 타점 판단별' }), tbl(['판단', '개수', '진입률', '진입 후 익절', '평균'], byType), el('p', { class: 'note', text: '진입 방식은 최종 진입가가 작성 시 가격 기준 어느 쪽이었는지로 분류합니다 (롱: 아래 = 되돌림, 위 = 돌파).' })));
-    cols.append(el('div', null, el('h3', { text: '확신도별' }), byConf.length ? tbl(['확신도', '개수', '성공률', '평균'], byConf.map(([k, g]) => {
-      const s = g.reduce((t, r) => t + (r.result.r || 0), 0);
-      return el('tr', null, el('td', { text: stars(k) }), el('td', { class: 'r m', text: g.length }), el('td', { class: 'r m', text: (g.filter(r => r.result.status === 'win').length / g.length * 100).toFixed(0) + '%' }), el('td', { class: 'r m ' + toneOf(s), text: fr(s / g.length) }));
-    })) : el('p', { class: 'note', text: '판정 끝난 리포트가 쌓이면 보입니다.' })));
+    const byType = [['pullback', '되돌림형'], ['breakout', '돌파형'], ['immediate', '즉시형']].map(([k, nm]) => grow(nm, done.filter(r => entryTypeOf(r) === k)));
+    cols.append(el('div', null, el('h3', { text: '진입 타점 판단별' }), tbl(['판단', ...HEAD], byType), el('p', { class: 'note', text: '진입 방식은 진입 구간이 작성 시 가격 기준 어느 쪽이었는지로 분류합니다 (롱: 아래 = 되돌림, 위 = 돌파, 구간 안 = 즉시).' })));
+    const byConf = [5, 4, 3, 2, 1].map(k => [k, done.filter(r => r.plan.confidence === k)]).filter(([, g]) => g.length);
+    cols.append(el('div', null, el('h3', { text: '확신도별' }), byConf.length ? tbl(['확신도', ...HEAD], byConf.map(([k, g]) => grow(stars(k), g))) : el('p', { class: 'note', text: '판정 끝난 리포트가 쌓이면 보입니다.' })));
+    cols.append(el('div', null, el('h3', { text: '방향별' }), tbl(['방향', ...HEAD], [grow('롱 관점', done.filter(r => r.plan.direction === 'long')), grow('숏 관점', done.filter(r => r.plan.direction === 'short'))])));
+    // 손절 원인: 손절 뒤 72시간 안에 목표까지 갔는지
+    const ls = done.filter(r => r.result.status === 'loss'), lk = ls.filter(r => r.result.afterStop != null);
+    cols.append(el('div', null, el('h3', { text: `손절 원인 (${ls.length}개)` }), tbl(['원인', '개수', '비율'], [
+      el('tr', null, el('td', { text: '손절 위치 문제 (털린 뒤 목표 도달)' }), el('td', { class: 'r m', text: lk.filter(r => r.result.afterStop).length }), el('td', { class: 'r m', text: pct(lk.filter(r => r.result.afterStop).length, lk.length) })),
+      el('tr', null, el('td', { text: '방향 문제 (목표까지 안 감)' }), el('td', { class: 'r m', text: lk.filter(r => !r.result.afterStop).length }), el('td', { class: 'r m', text: pct(lk.filter(r => !r.result.afterStop).length, lk.length) }))]),
+      el('p', { class: 'note', text: '위치 문제가 많으면 손절 자리 규칙을, 방향 문제가 많으면 방향 판단 규칙을 고칩니다.' })));
     // 관점별 방향 적중
     const vrows = VIEWS.map(([key, name]) => {
       const g = fin.filter(r => r.result.views && r.result.views[key] != null), hit = g.filter(r => r.result.views[key]).length;
@@ -752,6 +806,7 @@ ${await retestData(rep)}
     if (!R.cur && R.list.length) R.cur = R.list[0].id;
     renderList(); render();
     await scoreAll(); renderList(); render(); renderScore();
+    await fillAfterStop();
     reviewWork(false);
   }
   window.addEventListener('tabchange', e => { if (e.detail === 'report') start(); });
