@@ -352,6 +352,7 @@ ${d.track}
         odds = { fillRate: r.st.fillRate, winRate: r.st.winRate, win: r.st.win, sl: r.st.sl, timeout: r.st.timeout, filled: r.st.filled, tier: r.tier };
       } catch (e) {}
       const rep = { id, sym, created, price: d.price, atrD: d.atrD, atr15: d.atr15, plan, claude: c, odds, coverage, result: null, v: 4 };
+      if (R.auto) rep.auto = true;
       plan.entryTypeClaimed = c.entryType; plan.entryType = entryTypeOf(rep);
       await saveReport(rep);
       R.reports[id] = rep; R.cur = id;
@@ -795,9 +796,10 @@ ${await retestData(rep)}
   $('#repGo').addEventListener('click', generate);
 
   // ---------- 시작 ----------
-  let started = false;
-  async function start() {
-    if (started) return; started = true;
+  let started = false, startP = null;
+  const start = () => startP || (startP = boot());
+  async function boot() {
+    started = true;
     syncSym();
     try { const r = await fetch('api/ask/status', { headers: { 'X-Dashboard': '1' }, cache: 'no-store' }); R.local = r.ok; } catch (e) { R.local = false; }
     if (!R.local) setStatus('리포트 작성은 내 컴퓨터 대시보드(start-local.bat)에서만 됩니다. 저장된 리포트는 여기서도 볼 수 있습니다.');
@@ -812,6 +814,39 @@ ${await retestData(rep)}
   window.addEventListener('tabchange', e => { if (e.detail === 'report') start(); });
   window.addEventListener('themechange', () => { if (started) render(); });
   if (U.activeTab() === 'report') start();
+  // ---------- 아침 자동 리포트 ----------
+  // 내 컴퓨터 대시보드가 열려 있으면(어느 탭이든) 매일 9시~12시 사이에 BTC·ETH 리포트를 한 번씩 씁니다.
+  // 고래 스캔이 한 바퀴 돌도록 페이지를 연 지 8분이 지난 뒤에 쓰고, 오늘 9시 이후 리포트가 이미 있는 종목은 건너뜁니다.
+  // 탭이 여러 개 열려 있어도 한 탭만 쓰도록 브라우저 저장소에 잠금을 둡니다.
+  const AUTO_SYMS = ['BTC', 'ETH'], AUTO_FROM = 9, AUTO_TO = 12, AUTO_WARMUP = 8 * 60e3, TAB_ID = Math.random().toString(36).slice(2);
+  const lockKey = 'repAuto.lock';
+  const autoTries = {}; // 실패(사용 한도 등) 때 같은 날 같은 종목은 두 번까지만
+  const readLock = () => { try { return JSON.parse(localStorage.getItem(lockKey) || 'null'); } catch (e) { return null; } };
+  const writeLock = v => { try { v ? localStorage.setItem(lockKey, JSON.stringify(v)) : localStorage.removeItem(lockKey); } catch (e) {} };
+  async function autoMorning() {
+    const now = new Date(), h = now.getHours();
+    if (h < AUTO_FROM || h >= AUTO_TO || performance.now() < AUTO_WARMUP || R.busy || reviewing) return;
+    await start();
+    if (!R.local) return;
+    const lock = readLock();
+    if (lock && lock.tab !== TAB_ID && Date.now() - lock.at < 10 * 60e3) return; // 다른 탭이 쓰는 중
+    await loadList();
+    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), AUTO_FROM).getTime() / 1000;
+    const todo = AUTO_SYMS.filter(sym => !R.list.some(it => it.sym === sym && it.created >= from) && (autoTries[from + sym] || 0) < 2);
+    if (!todo.length) return;
+    const keep = R.sym;
+    try {
+      for (const sym of todo) {
+        writeLock({ tab: TAB_ID, at: Date.now() });
+        autoTries[from + sym] = (autoTries[from + sym] || 0) + 1;
+        R.sym = sym; syncSym(); R.auto = true;
+        setStatus(`아침 자동 리포트: ${TA.dispFull(sym)} 작성 시작…`);
+        await generate();
+      }
+    } finally { R.auto = false; R.sym = keep; syncSym(); writeLock(null); }
+  }
+  setInterval(autoMorning, 60000);
+
   // 열려 있는 동안 5분마다 다시 채점
   setInterval(async () => { if (!started || document.hidden || U.activeTab() !== 'report' || R.busy) return; await scoreAll(); renderList(); renderScore(); reviewWork(false); if (R.cur) { const box = $('.rep-result'); if (box && R.reports[R.cur].result) box.replaceWith(resultBox(R.reports[R.cur])); } }, 300000);
 })();

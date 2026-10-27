@@ -95,7 +95,7 @@ try { $l.Start() } catch { Write-Host "Port $Port is already in use. The dashboa
 $pool = [runspacefactory]::CreateRunspacePool(1, 4)
 $pool.Open()
 $jobs = New-Object System.Collections.ArrayList
-$statusCache = $null; $statusAt = [datetime]::MinValue
+$statusCache = $null; $statusAt = [datetime]::MinValue; $lastPage = $null
 
 Write-Host "Dashboard running: $Origin/"
 if ($Claude) { Write-Host "Chat: using Claude Code at $Claude" } else { Write-Host "Chat: Claude Code not found (free chat mode unavailable)" }
@@ -158,7 +158,13 @@ while ($l.IsListening) {
         # Newest change time of the page files, so open pages can reload themselves after an update.
         $files = @(Get-Item (Join-Path $Root 'index.html')) + @(Get-ChildItem (Join-Path $Root 'js'), (Join-Path $Root 'css') -File)
         $v = ($files | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum.Ticks
+        $lastPage = Get-Date  # open pages poll this every 20s (slower in background tabs)
         Send-Text $ctx 200 'application/json; charset=utf-8' ('{"v":"' + $v + '"}'); continue
+      }
+      if ($path -eq 'api/page/alive') {
+        # Seconds since an open dashboard page last polled api/version (-1 = none since the server started).
+        $ago = if ($lastPage) { [int]((Get-Date) - $lastPage).TotalSeconds } else { -1 }
+        Send-Text $ctx 200 'application/json; charset=utf-8' ('{"ago":' + $ago + '}'); continue
       }
       if ($path -eq 'api/ask/status') {
         if (-not $statusCache -or ((Get-Date) - $statusAt).TotalSeconds -gt 20 -or $ctx.Request.QueryString['refresh']) {
