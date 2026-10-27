@@ -151,13 +151,16 @@
 3. 진입 구간: 현재가 ${fp(d.price)}에서 24시간 안에 닿을 수 있는 거리(일봉 ATR ${fp(a)} 이내). 구간 폭은 15분 ATR(${fp(a15)})의 1~3배.
 4. 목표는 1개. 진입 중앙에서 2일 변동폭(일봉 ATR × 2 = ${fp(2 * a)}) 이내이면서 근거 있는 가격(유동성, FVG, 오더블록, 파동 목표, 박스 경계, 청산 밀집 가격 등).
 5. 손절: 15분·1시간 구조(직전 저점·고점, 스윕 저점, 오더블록 등) 바깥.
-6. 손익비 = |목표 − 진입 중앙| ÷ |진입 중앙 − 손절| 이 반드시 ${MIN_RR}.0 이상. 안 나오면 진입을 더 유리한 가격으로 옮겨서 맞춘다.
+6. 손익비 = |목표 − 진입 중앙| ÷ |진입 중앙 − 손절| 이 반드시 ${MIN_RR}.0 이상. 안 나오면 진입 방식·목표·손절을 다시 검토해서 맞춘다. 진입만 유리한 쪽으로 미는 것은 체결 확률을 떨어뜨리므로, 그렇게 할 때는 그 가격에 24시간 안에 올 근거를 entryReason에 숫자로 적는다. 2:1이 나오는 근거 있는 셋업이 정말 없으면 confidence를 1로 둔다.
 7. 이 리포트는 작성 시점부터 72시간 안에 채점된다. 24시간 안에 진입 구간에 안 닿으면 실패다.
 8. 가격 숫자는 아래 데이터에 있는 값이나 그 값으로 계산한 값만 쓴다. 지어내지 않는다.
 9. 매수·매도를 지시하는 말투("사세요") 대신 "롱 관점", "숏 관점"으로 쓴다.
-10. 진입 타점을 정하기 전에 반드시 "되돌림형(pullback)"인지 "즉시형(immediate)"인지 먼저 판단한다. 근거: 15분·1시간 모멘텀(연속 봉 방향, 거래량 배수), 시장 수급의 봉 해석(신규 롱/숏, 숏·롱 청산, 스퀴즈), 선물·현물 CVD 방향, OI 증감, 거래소별 시장가 순매수, 방향성 점수.
-   - 되돌림형: 되돌림이 올 근거가 있을 때만 ICT 구간·피보나치 등 되돌림 자리에 진입한다. 그 자리까지 24시간 안에 올 근거(최근 24시간 가격 범위, 같은 구간을 최근에 되돌린 이력 등)를 entryReason에 숫자로 적는다.
-   - 즉시형: 추세와 수급이 한쪽으로 강해서 되돌림 없이 갈 가능성이 높으면, 진입 구간을 현재가에서 15분 ATR(${fp(a15)}) 1배 이내로 잡고 손절·목표도 그 기준으로 다시 정한다.
+10. 진입 방식은 네가 모든 데이터를 보고 가장 적중 확률이 높은 것을 고른다. 목표는 "이 리포트가 익절로 끝날 확률"을 최대로 하는 것이다. 희망이나 관점에 대한 확신을 섞지 말고 데이터로만 판단한다.
+   - 되돌림형(pullback): 현재가보다 유리한 쪽(롱이면 아래, 숏이면 위)의 근거 있는 자리(ICT 구간, 피보나치, 박스 경계 등)에 지정가로 진입. 박스권·추세 약함·반대쪽 유동성 스윕이 먼저 나올 근거가 있을 때.
+   - 돌파형(breakout): 현재가보다 불리한 쪽(롱이면 위, 숏이면 아래)의 확인 가격을 넘어서면 진입. 가격이 예측 방향으로 움직여야 체결되므로, 추세·수급·시장 상태가 한쪽으로 강할 때. 손절은 돌파한 구조의 반대편 바깥.
+   - 즉시형(immediate): 현재가에서 15분 ATR(${fp(a15)}) 1배 이내 진입. 이미 근거 자리에 와 있고 바로 출발할 근거가 있을 때.
+   - 반드시 알아 둘 것(역선택): 되돌림 지정가는 예측이 맞으면 가격이 바로 가 버려 체결이 안 되고, 예측이 틀릴 때 주로 체결된다. 아래 <지난 리포트 성적>에서 진입 방식별 체결률·익절률을 확인하고, 그 결과를 이번 선택의 근거로 쓴다.
+   - 근거: 15분·1시간 모멘텀(연속 봉 방향, 거래량 배수), 지금 시장 상태, 봉 해석(신규 롱/숏, 청산, 스퀴즈), 선물·현물 CVD, OI 증감, 거래소별 시장가, 방향성 점수, 고래 움직임. entryReason에 왜 이 방식인지와 24시간 안에 진입가에 올 근거를 숫자로 적는다.
 11. 아래 데이터(4개 봉 판독, 방향성 점수·점검표, 시장 수급 1시간·15분, 지금 시장 상태(가격×OI)·OI 급증 알림, 거래소별 시장가, 하이퍼리퀴드, 고래 vs 개인·스마트머니·고래 평단, 고래 청산가 지도, 고래 움직임 피드, 상위 트레이더 청산맵, 추적 지갑)를 모두 검토한다.
    - 지금 시장 상태가 "하락 추세 가속·롱이 들어오는데 못 오름", "포지션 쌓이는 중" 같은 상태면 진입 타점과 손절 위치에 반영한다 (털릴 쪽 청산 가격대 안쪽에 손절을 두지 않는다).
    - OI 급증 알림이 있으면 털릴 쪽 구간을 목표나 위험 요인에 반영한다.
@@ -174,7 +177,7 @@ ${RULES}
   "confidence": 1~5 정수,
   "title": "한 줄 전략, 15자 이내 (예: 저점 위 눌림 매수)",
   "context": "지금 상황 한 줄, 숫자 포함 (예: 최근 3일 79,700~84,300 범위 · 전일 81,300 → 지금 82,200)",
-  "entryType": "pullback 또는 immediate",
+  "entryType": "pullback 또는 breakout 또는 immediate",
   "entryReason": "왜 되돌림형/즉시형인지, 진입가에 24시간 안에 올 근거 (숫자 포함 두세 문장)",
   "entry": { "low": 숫자, "high": 숫자 },
   "target": 숫자,
@@ -211,7 +214,42 @@ ${d.flow}
 
 ## 고래·청산맵
 ${d.whale}
-</데이터>`;
+</데이터>
+
+<지난 리포트 성적>
+${d.track}
+</지난 리포트 성적>`;
+  }
+
+  // 진입 방식: 최종 진입가가 현재가 기준 어느 쪽인지로 정합니다 (롱: 아래 = 되돌림, 위 = 돌파 / 숏은 반대).
+  function entryTypeOf(rep) {
+    const p = rep.plan, dir = p.direction === 'long' ? 1 : -1, near = rep.atr15 ? rep.atr15 : rep.price * 0.0015;
+    const off = (p.entry - rep.price) * dir; // 음수 = 유리한 쪽(되돌림), 양수 = 불리한 쪽(돌파)
+    return Math.abs(p.entry - rep.price) <= near ? 'immediate' : off < 0 ? 'pullback' : 'breakout';
+  }
+  const TYPE_NAME = { pullback: '되돌림형', breakout: '돌파형', immediate: '즉시형' };
+  // 지난 리포트 성적: Claude가 진입 방식을 고를 때 근거로 씁니다.
+  function trackText() {
+    const reps = R.list.map(it => R.reports[it.id]).filter(r => r && r.result && ['win', 'loss', 'noentry', 'timeout'].includes(r.result.status));
+    if (!reps.length) return '아직 결과가 난 리포트 없음';
+    const L = [`결과가 난 리포트 ${reps.length}개 (진입 방식은 최종 진입가가 현재가 기준 어느 쪽이었는지로 분류)`];
+    ['pullback', 'breakout', 'immediate'].forEach(k => {
+      const g = reps.filter(r => entryTypeOf(r) === k); if (!g.length) { L.push(`- ${TYPE_NAME[k]}: 아직 없음`); return; }
+      const ent = g.filter(r => r.result.status !== 'noentry'), w = ent.filter(r => r.result.status === 'win').length, ne = g.filter(r => r.result.status === 'noentry');
+      const neRight = ne.filter(r => r.result.dirHit).length, sumR = g.reduce((t, r) => t + (r.result.r || 0), 0);
+      L.push(`- ${TYPE_NAME[k]}: ${g.length}개 · 체결 ${ent.length}개(${Math.round(ent.length / g.length * 100)}%) · 체결 후 익절 ${w}/${ent.length} · 손절 ${ent.filter(r => r.result.status === 'loss').length} · 진입 실패 ${ne.length}개 중 72시간 뒤 방향이 맞았던 것 ${neRight}개 · 합계 ${sumR.toFixed(2)}R`);
+    });
+    ['long', 'short'].forEach(s => { const g = reps.filter(r => r.plan.direction === s); if (g.length) L.push(`- ${s === 'long' ? '롱' : '숏'} 관점 ${g.length}개 · 익절 ${g.filter(r => r.result.status === 'win').length} · 72시간 방향 적중 ${g.filter(r => r.result.dirHit).length}/${g.filter(r => r.result.dirHit != null).length}`); });
+    // 사후 검증(리테스트) 결과: 관점별 맞음/틀림과 최근 교훈
+    const rv = reps.filter(r => r.review);
+    if (rv.length) {
+      L.push(`사후 검증된 리포트 ${rv.length}개 · 관점별 판단 (맞음/틀림): ` + VIEWS.map(([k, nm]) => { const g = rv.map(r => r.review.views && r.review.views[k] && r.review.views[k].result); return `${nm} ${g.filter(x => x === '맞음').length}/${g.filter(x => x === '틀림').length}`; }).join(', '));
+      L.push('최근 사후 검증 교훈 (다음 판단에 반드시 반영):');
+      rv.slice(0, 10).forEach(r => { if (r.review.lesson) L.push(`- ${fdt(r.created)} ${TA.disp(r.sym)} ${r.plan.direction === 'long' ? '롱' : '숏'} → ${r.review.lesson}`); });
+    }
+    L.push('최근 12개:');
+    reps.slice(0, 12).forEach(r => L.push(`- ${fdt(r.created)} ${TA.disp(r.sym)} ${r.plan.direction === 'long' ? '롱' : '숏'} ${TYPE_NAME[entryTypeOf(r)]} 손익비 ${r.plan.rr.toFixed(2)} → ${({ win: '익절', loss: '손절', noentry: '진입 실패', timeout: '시간 만료' })[r.result.status]}${r.result.dirHit != null ? ` (72시간 방향 ${r.result.dirHit ? '맞음' : '틀림'})` : ''}`));
+    return L.join('\n');
   }
 
   // ---------- Claude 호출 (start-local.bat 서버 → 이 PC의 Claude Code) ----------
@@ -272,7 +310,7 @@ ${d.whale}
       const s15 = series[3], d1 = series[0];
       const created = Math.floor(Date.now() / 1000);
       const [flow, whale, dash] = await Promise.all([flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), whaleText(sym), dashText(sym).catch(e => '방향성 데이터 오류: ' + e.message)]);
-      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash };
+      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash, track: trackText() };
       // 리포트에 어떤 데이터가 들어갔는지 기록 (화면의 "반영한 데이터")
       const has = (t, bad) => !!t && !bad.some(b => t.includes(b));
       const coverage = [
@@ -298,8 +336,8 @@ ${d.whale}
         const r = TA.planEval(s15, ctx, { side, entry: plan.entry, tp: Math.abs(plan.target / plan.entry - 1) * 100, sl: Math.abs(plan.stop / plan.entry - 1) * 100, holdHours: 72, amt: 0, lev: 1 });
         odds = { fillRate: r.st.fillRate, winRate: r.st.winRate, win: r.st.win, sl: r.st.sl, timeout: r.st.timeout, filled: r.st.filled, tier: r.tier };
       } catch (e) {}
-      const rep = { id, sym, created, price: d.price, atrD: d.atrD, plan, claude: c, odds, coverage, result: null, v: 2 };
-      plan.entryType = c.entryType === 'immediate' ? 'immediate' : 'pullback';
+      const rep = { id, sym, created, price: d.price, atrD: d.atrD, atr15: d.atr15, plan, claude: c, odds, coverage, result: null, v: 3 };
+      plan.entryTypeClaimed = c.entryType; plan.entryType = entryTypeOf(rep);
       await saveReport(rep);
       R.reports[id] = rep; R.cur = id;
       await loadList(); renderList(); render();
@@ -351,7 +389,7 @@ ${d.whale}
   }
   U.reportEvaluate = evaluate; // 확인용
   // 매매 테스트 탭이 같은 데이터 수집·Claude 호출을 씁니다.
-  U.repTools = { loadTf, tfText, flowText, whaleText, dashText, askClaude, parseJson, RULES, TFS, TF_LABEL };
+  U.repTools = { loadTf, tfText, flowText, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
   const STATUS = {
     waiting: ['warn', '진입 대기'], open: ['warn', '진입 · 진행 중'], win: ['good', '성공'], loss: ['bad', '손절 실패'],
     noentry: ['bad', '진입 실패'], timeout: ['flat', '시간 만료']
@@ -368,6 +406,80 @@ ${d.whale}
         if (res.final && R.local) await saveReport(rep).catch(() => {});
       } catch (e) {}
     }));
+  }
+
+  // ---------- 사후 검증 (리테스트): 72시간이 끝난 리포트의 판단을 실제 가격 흐름에 다시 대 봅니다 ----------
+  async function retestData(rep) {
+    const t0 = rep.created, end = t0 + RESULT_HOURS * H, coin = TA.hlCoin(rep.sym), p = rep.plan, c = rep.claude;
+    const [m15, h1] = await Promise.all([
+      TA.hl({ type: 'candleSnapshot', req: { coin, interval: '15m', startTime: Math.floor(t0 / 900) * 900 * 1000, endTime: end * 1000 } }),
+      TA.hl({ type: 'candleSnapshot', req: { coin, interval: '1h', startTime: Math.floor(t0 / 3600) * 3600 * 1000, endTime: end * 1000 } })]);
+    const bars = m15.map(k => ({ t: k.t / 1000, h: +k.h, l: +k.l, c: +k.c })).filter(b => b.t >= Math.ceil(t0 / 900) * 900 && b.t < end);
+    if (!bars.length) throw new Error('작성 이후 가격 데이터 없음');
+    // 리포트에 나온 가격마다 언제 처음 닿았는지
+    const levels = [['진입 상단', p.entryHigh], ['진입 하단', p.entryLow], ['진입 중앙', p.entry], ['목표', p.target], ['손절', p.stop]];
+    (c.views || []).forEach(v => (v.levels || []).forEach(l => { if (isFinite(+l.price)) levels.push([`${VIEW_NAME[v.key] || v.key} · ${l.label}`, +l.price]); }));
+    const touch = price => { const b = bars.find(x => x.l <= price && x.h >= price); return b ? fdt(b.t) + ` (${((b.t - t0) / H).toFixed(1)}시간 뒤)` : '72시간 동안 안 닿음'; };
+    let hi = -Infinity, lo = Infinity, hiT = 0, loT = 0; bars.forEach(b => { if (b.h > hi) { hi = b.h; hiT = b.t; } if (b.l < lo) { lo = b.l; loT = b.t; } });
+    const at = h => { const x = bars.filter(b => b.t < t0 + h * H); return x.length ? x[x.length - 1].c : null; };
+    const path = h1.filter(k => k.t / 1000 < end).map(k => `${fdt(k.t / 1000)} ${fp(+k.o)}/${fp(+k.h)}/${fp(+k.l)}/${fp(+k.c)}`).join('\n');
+    const r = rep.result || {};
+    return `작성 ${fdt(t0)} 가격 ${fp(rep.price)} → 4시간 뒤 ${fp(at(4))} · 24시간 뒤 ${fp(at(24))} · 72시간 뒤 ${fp(at(72))}
+72시간 최고 ${fp(hi)} (${fdt(hiT)}) · 최저 ${fp(lo)} (${fdt(loT)})
+채점 결과: ${({ win: '익절', loss: '손절', noentry: '진입 실패', timeout: '시간 만료' })[r.status] || r.status}${r.entered ? ` · 진입 ${fdt(r.entered)}` : ''}${r.at ? ` · ${r.status === 'win' ? '익절' : '손절'} ${fdt(r.at)}` : ''} · ${r.r != null ? r.r.toFixed(2) + 'R' : ''} · 72시간 방향 ${r.dirHit == null ? '-' : r.dirHit ? '맞음' : '틀림'}
+리포트에 나온 가격이 처음 닿은 시각:
+${levels.map(([n, v]) => `- ${n} ${fp(v)}: ${touch(v)}`).join('\n')}
+작성 후 1시간봉 (시각 시/고/저/종):
+${path}`;
+  }
+  async function retest(rep) {
+    const c = rep.claude, p = rep.plan;
+    const orig = JSON.stringify({ direction: p.direction, confidence: p.confidence, entry: [p.entryLow, p.entryHigh], target: p.target, stop: p.stop, rr: +p.rr.toFixed(2), entryType: p.entryType, entryTypeClaimed: p.entryTypeClaimed, entryReason: c.entryReason, basis: c.basis, title: c.title, confluence: c.confluence, invalidation: c.invalidation, risks: c.risks, timeframes: c.timeframes,
+      views: (c.views || []).map(v => ({ key: v.key, dir: v.dir, confidence: v.confidence, levels: v.levels, wrongIf: v.wrongIf, body: v.body })), summary: c.summary });
+    const prompt = `너는 "매매연구소" 리포트의 사후 검증 담당이다. 72시간이 끝난 리포트를 실제 가격 흐름과 하나씩 대조해서, 각 판단이 왜 맞았고 왜 틀렸는지 다시 검증(리테스트)한다. **JSON 하나로만** 답한다.
+- 결과만 보고 끼워 맞추지 말고, 작성 시점에 알 수 있었던 근거와 실제로 일어난 가격 순서를 비교한다.
+- 맞았어도 근거가 틀렸으면(우연히 맞음) 그렇게 쓴다. 틀렸어도 근거는 맞았는데 시장이 다른 이유로 움직였으면 그렇게 쓴다.
+- 가격·시각은 아래 데이터에 있는 값만 쓴다. 쉬운 한국어로 쓴다.
+
+[출력 JSON 형식]
+{ "verdict": "한 줄 총평",
+  "directionCheck": "방향 판단이 맞았는지와 이유",
+  "entryCheck": "진입 방식(되돌림/돌파/즉시)과 진입 가격 선택이 맞았는지, 실제로 가격이 어떤 순서로 움직였는지",
+  "stopCheck": "손절 위치가 적절했는지 (너무 가까웠나, 구조 안쪽이었나)",
+  "targetCheck": "목표가가 적절했는지 (너무 멀었나, 더 가까운 근거가 있었나)",
+  "views": { "elliott": { "result": "맞음|틀림|판단불가", "why": "한두 문장" }, "ict": {...}, "wyckoff": {...}, "divergence": {...}, "flow": {...}, "whale": {...} },
+  "luck": "결과에 운이 크게 작용했는지 (예: 근거는 틀렸는데 우연히 맞음)",
+  "missed": ["작성 때 데이터에 있었는데 놓친 신호"],
+  "lesson": "다음 리포트에 쓸 교훈 한 줄 (구체적으로)" }
+
+<원래 리포트>
+${orig}
+</원래 리포트>
+
+<실제로 일어난 일>
+${await retestData(rep)}
+</실제로 일어난 일>`;
+    return parseJson(await askClaude(prompt, () => {}));
+  }
+  let reviewing = false;
+  // 내 컴퓨터 대시보드에서 72시간이 끝났는데 사후 검증이 없는 리포트를 하나씩 검증합니다.
+  // 이 기능을 넣기 전 리포트(v3 미만)는 자동으로 하지 않고, "지난 리포트 모두 검증" 버튼으로만 합니다.
+  async function reviewWork(all) {
+    if (!R.local || reviewing || R.busy) return;
+    reviewing = true;
+    try {
+      const todo = R.list.map(it => R.reports[it.id]).filter(r => r && r.result && r.result.final && !r.review && (r.reviewErr || 0) < 2 && (all || (r.v || 1) >= 3));
+      for (let i = 0; i < todo.length; i++) {
+        if (R.busy) break;
+        const rep = todo[i];
+        window.TA_chatBusy = true;
+        $('#repRevStatus') && ($('#repRevStatus').textContent = `${TA.disp(rep.sym)} ${fdt(rep.created)} 리포트를 사후 검증하는 중… (${i + 1}/${todo.length})`);
+        try { rep.review = await retest(rep); rep.review.at = Math.floor(Date.now() / 1000); delete rep.reviewErr; }
+        catch (e) { rep.reviewErr = (rep.reviewErr || 0) + 1; rep.reviewLastErr = e.message; }
+        await saveReport(rep).catch(() => {});
+        if (R.cur === rep.id) render(); renderScore();
+      }
+    } finally { reviewing = false; window.TA_chatBusy = false; $('#repRevStatus') && ($('#repRevStatus').textContent = ''); }
   }
 
   // ---------- 기록 불러오기 ----------
@@ -444,11 +556,11 @@ ${d.whale}
     card.append(el('div', { class: 'rep-body' }, ladder(rep), right));
     // 진입 타점 판단과 근거 (v2 리포트부터)
     if (c.entryType || c.basis) {
-      const imm = c.entryType === 'immediate';
+      const et = rep.plan.entryType || entryTypeOf(rep), etLabel = { pullback: '되돌림형 · 유리한 자리에서 지정가', breakout: '돌파형 · 확인 가격을 넘으면 진입', immediate: '즉시형 · 현재가 근처 진입' }[et];
       const kv = el('dl', { class: 'kv' });
       if (c.entryReason) kv.append(el('dt', { text: '판단 근거' }), el('dd', { style: 'font-family:var(--sans)', text: c.entryReason }));
       [['진입 근거', 'entry'], ['목표 근거', 'target'], ['손절 근거', 'stop']].forEach(([a, k]) => { if (c.basis && c.basis[k]) kv.append(el('dt', { text: a }), el('dd', { style: 'font-family:var(--sans)', text: c.basis[k] })); });
-      card.append(el('div', { class: 'tt-block' }, el('h3', null, '진입 타점 판단', chip(imm ? 'warn' : 'flat', imm ? '즉시형 · 현재가 근처 진입' : '되돌림형 · 되돌림 자리 진입')), kv));
+      card.append(el('div', { class: 'tt-block' }, el('h3', null, '진입 타점 판단', chip(et === 'pullback' ? 'flat' : 'warn', etLabel)), kv));
     }
     if (rep.odds) {
       const o = rep.odds;
@@ -503,6 +615,32 @@ ${d.whale}
       s.alt ? el('p', null, el('b', { text: '대안 시나리오 ' }), s.alt) : null,
       list('체크포인트', s.checkpoints, '')));
     box.append(sum);
+
+    // 사후 검증 (리테스트)
+    const rvBox = el('section', { class: 'panel' }, el('div', { class: 'ph' }, el('h2', { text: '사후 검증 (리테스트)' }), el('small', { text: '72시간이 끝난 뒤 Claude가 각 판단을 실제 가격 흐름에 다시 대 보고 왜 맞았는지·틀렸는지 확인' })));
+    const rv = rep.review;
+    if (rv) {
+      const kv = el('dl', { class: 'kv' });
+      [['방향', rv.directionCheck], ['진입', rv.entryCheck], ['손절', rv.stopCheck], ['목표', rv.targetCheck], ['운', rv.luck]].forEach(([a, b]) => { if (b) kv.append(el('dt', { text: a }), el('dd', { style: 'font-family:var(--sans)', text: b })); });
+      const vt = el('dl', { class: 'kv' });
+      VIEWS.forEach(([k, nm]) => { const v = rv.views && rv.views[k]; if (!v) return; vt.append(el('dt', null, nm + ' ', chip(v.result === '맞음' ? 'good' : v.result === '틀림' ? 'bad' : 'flat', v.result)), el('dd', { style: 'font-family:var(--sans)', text: v.why || '' })); });
+      rvBox.append(el('div', { class: 'pb rep-sum' }, el('p', null, el('b', { text: rv.verdict || '' })), kv, el('h3', { text: '관점별 검증' }), vt,
+        (rv.missed || []).length ? el('div', null, el('h3', { text: '놓친 신호' }), el('ul', { class: 'vlist' }, rv.missed.map(x => el('li', { class: 'warn', text: x })))) : null,
+        rv.lesson ? el('p', { class: 'rep-lesson' }, el('b', { text: '다음 리포트에 쓸 교훈 ' }), rv.lesson) : null,
+        el('p', { class: 'note', text: `검증 ${fdt(rv.at)} · 이 교훈은 다음 리포트를 쓸 때 Claude에게 함께 전달됩니다.` })));
+    } else if (rep.result && rep.result.final) {
+      rvBox.append(el('div', { class: 'pb' }, el('p', { class: 'note', text: rep.reviewErr >= 2 ? `검증하지 못했습니다: ${rep.reviewLastErr || ''}` : '아직 검증 전입니다.' }),
+        R.local ? el('button', { class: 'btn primary', type: 'button', text: '지금 검증', onclick: async e => { e.target.disabled = true; e.target.textContent = '검증 중… (1~2분)'; delete rep.reviewErr; R.cur = rep.id; reviewing = false; await reviewOne(rep); } }) : el('p', { class: 'note', text: '검증은 내 컴퓨터 대시보드에서 합니다.' })));
+    } else rvBox.append(el('p', { class: 'note pb', text: `72시간(${fdt(rep.created + RESULT_HOURS * H)})이 끝나면 내 컴퓨터 대시보드에서 자동으로 검증합니다.` }));
+    box.append(rvBox);
+  }
+  async function reviewOne(rep) {
+    window.TA_chatBusy = true;
+    try { rep.review = await retest(rep); rep.review.at = Math.floor(Date.now() / 1000); delete rep.reviewErr; }
+    catch (e) { rep.reviewErr = (rep.reviewErr || 0) + 1; rep.reviewLastErr = e.message; }
+    finally { window.TA_chatBusy = false; }
+    await saveReport(rep).catch(() => {});
+    render(); renderScore();
   }
   function resultBox(rep) {
     const r = rep.result, p = rep.plan;
@@ -563,11 +701,11 @@ ${d.whale}
     const tbl = (head, rows) => el('div', { class: 'tblwrap' }, el('table', null, el('thead', null, el('tr', null, head.map((h, i) => el('th', { class: i ? 'r' : '', text: h })))), el('tbody', null, rows)));
     const cols = el('div', { class: 'cols pb' });
     // 진입 타점 판단별: 되돌림형·즉시형 각각 진입률과 진입 후 익절률
-    const byType = [['pullback', '되돌림형'], ['immediate', '즉시형']].map(([k, nm]) => {
-      const g = done.filter(r => r.plan.entryType === k), ent = g.filter(r => r.result.status !== 'noentry'), w = ent.filter(r => r.result.status === 'win').length, s = g.reduce((t, r) => t + (r.result.r || 0), 0);
+    const byType = [['pullback', '되돌림형'], ['breakout', '돌파형'], ['immediate', '즉시형']].map(([k, nm]) => {
+      const g = done.filter(r => entryTypeOf(r) === k), ent = g.filter(r => r.result.status !== 'noentry'), w = ent.filter(r => r.result.status === 'win').length, s = g.reduce((t, r) => t + (r.result.r || 0), 0);
       return el('tr', null, el('td', { text: nm }), el('td', { class: 'r m', text: g.length }), el('td', { class: 'r m', text: g.length ? (ent.length / g.length * 100).toFixed(0) + '%' : '—' }), el('td', { class: 'r m', text: ent.length ? (w / ent.length * 100).toFixed(0) + '%' : '—' }), el('td', { class: 'r m ' + toneOf(s), text: g.length ? fr(s / g.length) : '—' }));
     });
-    cols.append(el('div', null, el('h3', { text: '진입 타점 판단별' }), tbl(['판단', '개수', '진입률', '진입 후 익절', '평균'], byType), el('p', { class: 'note', text: '판단 기록은 이번 개선 이후 리포트부터 쌓입니다.' })));
+    cols.append(el('div', null, el('h3', { text: '진입 타점 판단별' }), tbl(['판단', '개수', '진입률', '진입 후 익절', '평균'], byType), el('p', { class: 'note', text: '진입 방식은 최종 진입가가 작성 시 가격 기준 어느 쪽이었는지로 분류합니다 (롱: 아래 = 되돌림, 위 = 돌파).' })));
     cols.append(el('div', null, el('h3', { text: '확신도별' }), byConf.length ? tbl(['확신도', '개수', '성공률', '평균'], byConf.map(([k, g]) => {
       const s = g.reduce((t, r) => t + (r.result.r || 0), 0);
       return el('tr', null, el('td', { text: stars(k) }), el('td', { class: 'r m', text: g.length }), el('td', { class: 'r m', text: (g.filter(r => r.result.status === 'win').length / g.length * 100).toFixed(0) + '%' }), el('td', { class: 'r m ' + toneOf(s), text: fr(s / g.length) }));
@@ -579,6 +717,10 @@ ${d.whale}
     });
     cols.append(el('div', null, el('h3', { text: `관점별 방향 적중 (${RESULT_HOURS}시간 뒤)` }), tbl(['관점', '개수', '적중률'], vrows), el('p', { class: 'note', text: '중립으로 본 관점은 세지 않습니다.' })));
     box.append(cols);
+    const rvd = reps.filter(r => r.review), left = reps.filter(r => r.result.final && !r.review).length;
+    const rvRows = VIEWS.map(([k, nm]) => { const g = rvd.map(r => r.review.views && r.review.views[k] && r.review.views[k].result), ok = g.filter(x => x === '맞음').length, bad = g.filter(x => x === '틀림').length; return el('tr', null, el('td', { text: nm }), el('td', { class: 'r m', text: ok }), el('td', { class: 'r m', text: bad }), el('td', { class: 'r m', text: ok + bad ? Math.round(ok / (ok + bad) * 100) + '%' : '—' })); });
+    box.append(el('div', { class: 'pb' }, el('h3', { text: `관점별 사후 검증 (리테스트 ${rvd.length}개)` }), tbl(['관점', '맞음', '틀림', '적중률'], rvRows),
+      el('div', { class: 'inrow', style: 'margin-top:8px;align-items:center' }, R.local && left ? el('button', { class: 'btn', type: 'button', text: `지난 리포트 모두 검증 (${left}개 · 1개당 1~2분)`, onclick: e => { e.target.disabled = true; reviewWork(true); } }) : null, el('span', { class: 'muted', id: 'repRevStatus', style: 'font-size:12.5px' }))));
   }
 
   // ---------- 종목 고르기 ----------
@@ -610,10 +752,11 @@ ${d.whale}
     if (!R.cur && R.list.length) R.cur = R.list[0].id;
     renderList(); render();
     await scoreAll(); renderList(); render(); renderScore();
+    reviewWork(false);
   }
   window.addEventListener('tabchange', e => { if (e.detail === 'report') start(); });
   window.addEventListener('themechange', () => { if (started) render(); });
   if (U.activeTab() === 'report') start();
   // 열려 있는 동안 5분마다 다시 채점
-  setInterval(async () => { if (!started || document.hidden || U.activeTab() !== 'report' || R.busy) return; await scoreAll(); renderList(); renderScore(); if (R.cur) { const box = $('.rep-result'); if (box && R.reports[R.cur].result) box.replaceWith(resultBox(R.reports[R.cur])); } }, 300000);
+  setInterval(async () => { if (!started || document.hidden || U.activeTab() !== 'report' || R.busy) return; await scoreAll(); renderList(); renderScore(); reviewWork(false); if (R.cur) { const box = $('.rep-result'); if (box && R.reports[R.cur].result) box.replaceWith(resultBox(R.reports[R.cur])); } }, 300000);
 })();
