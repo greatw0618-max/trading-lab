@@ -463,6 +463,21 @@
         return `\n[고래 청산가 지도] ${step.toLocaleString('en-US')}달러 묶음 · 현재가 ${fp(mark)} ±20%: ` + near.map(r => `${fp(r.price)}(${fpct((r.price / mark - 1) * 100, 1)}) ${r.short >= r.long ? `숏 청산 ${fcoin(r.short, coin)} ${r.nS}명` : `롱 청산 ${fcoin(r.long, coin)} ${r.nL}명`}`).join(' · ');
       })();
   };
+  // 리포트 신호 기록용: 고래 스캔 결과를 방향(+1 / −1 / 0)으로. 스캔 전이면 null
+  U.whaleSignals = async function (coin) {
+    if (!WS.list.length || !WS.scanned) return null;
+    let mark = null; try { const ctx = await TA.loadCtx(); mark = ctx[coin] ? +ctx[coin].markPx : null; } catch (e) {}
+    const st = whaleStats(coin, mark), rt = await loadRetail(coin), sg = v => Math.sign(Math.round(v * 1e6));
+    const out = { whaleTilt: sg(st.long - (st.short - st.hedgeSize)), smartTilt: sg(st.sm.long - st.sm.short) };
+    if (mark) {
+      // 청산가 자석: 현재가 ±10% 안에서 위쪽 숏 청산이 많으면 +1, 아래쪽 롱 청산이 많으면 −1
+      let up = 0, dn = 0;
+      liqBins(coin, mark).rows.forEach(r => { const d = r.price / mark - 1; if (d > 0 && d <= 0.1) up += r.short; if (d < 0 && d >= -0.1) dn += r.long; });
+      out.liqMagnet = sg(up - dn);
+    }
+    if (!rt.err) { out.retailLong = sg(rt.long - 50); out.retailChange = sg(rt.long - rt.ago); }
+    return out;
+  };
   // 내 컴퓨터 대시보드에서는 어느 탭을 보든 고래 스캔을 시작해 둡니다 (리포트·OI 급증 알림이 바로 쓸 수 있게).
   setTimeout(async () => {
     try { const r = await fetch('api/ask/status', { headers: { 'X-Dashboard': '1' }, cache: 'no-store' }); if (r.ok) scanLoop(); } catch (e) {}

@@ -48,7 +48,15 @@
     L.push('[다이버전스] ' + (div.length ? div.map(d => `${d.name}${d.provisional ? '(진행 중)' : ''} 가격 ${fp(d.a.p)}→${fp(d.b.p)} RSI ${d.a.r.toFixed(1)}→${d.b.r.toFixed(1)} (${d.age}봉 전)`).join(' / ') : '최근 20봉 없음'));
     const dip = TA.dipView(ict, ew, wy, div);
     L.push(`[대시보드 종합 판독] ${dip.verdict[1]} (점수 ${dip.score})`);
-    return { text: L.join('\n'), atr, price: c };
+    // 신호 기록(+1 상승 / −1 하락 / 0 없음): 나중에 신호별로 72시간 방향을 맞혔는지 셉니다
+    const a20 = e(20), a50 = e(50);
+    const sig = {
+      ema: a20 == null || a50 == null ? 0 : c > a20 && a20 > a50 ? 1 : c < a20 && a20 < a50 ? -1 : 0,
+      ict: Math.sign(ict.trend || 0), ew: Math.sign(ew.bigDir || 0),
+      wy: wy ? (/^(마크업|축적)$/.test(wy.schema) ? 1 : /^(마크다운|분산)$/.test(wy.schema) ? -1 : 0) : 0,
+      div: div.length ? div[0].dir : 0, dip: Math.sign(dip.score)
+    };
+    return { text: L.join('\n'), atr, price: c, sig };
   }
 
   // 차트 분석 탭의 방향성 점수(1시간 ICT 구조 + 4시간 EMA50 + 일봉 EMA20/50)와 방향성 점검표(시장 기준·기초지수)
@@ -115,6 +123,24 @@
     if (fund.status === 'fulfilled' && fund.value.length) L.push('바이낸스 펀딩(8시간): ' + fund.value.map(f => (f.fundingRate * 100).toFixed(4) + '%').join(', '));
     if (ctx.status === 'fulfilled' && ctx.value[sym]) { const x = ctx.value[sym]; L.push(`하이퍼리퀴드 펀딩(1시간) ${(x.funding * 100).toFixed(4)}% · OI ${fusd(x.openInterest * x.markPx)} · 프리미엄 ${x.premium != null ? (x.premium * 100).toFixed(4) + '%' : '-'}`); }
     return L.join('\n');
+  }
+  // 신호 기록용 수급 방향 (바이낸스 선물 + 하이퍼리퀴드). 코인이 아니거나 데이터가 없으면 빈 칸
+  async function flowSignals(sym) {
+    if (!isCoin(sym)) return {};
+    const p = sym + 'USDT', F = 'https://fapi.binance.com', out = {};
+    const [kl, oi, top, ctx] = await Promise.allSettled([bj(`${F}/fapi/v1/klines?symbol=${p}&interval=1h&limit=25`), bj(`${F}/futures/data/openInterestHist?symbol=${p}&period=1h&limit=13`),
+      bj(`${F}/futures/data/topLongShortPositionRatio?symbol=${p}&period=1h&limit=1`), TA.loadCtx()]);
+    if (kl.status === 'fulfilled' && kl.value.length >= 25) {
+      const k = kl.value.slice(0, -1), net = a => a.reduce((t, x) => t + 2 * (+x[9]) - (+x[5]), 0); // 마지막(진행 중) 봉 제외
+      out.cvd4h = Math.sign(net(k.slice(-4))); out.cvd24h = Math.sign(net(k));
+      if (oi.status === 'fulfilled' && oi.value.length >= 13) {
+        const o = oi.value, dOi = +o[o.length - 1].sumOpenInterest / +o[0].sumOpenInterest - 1, dPx = +k[k.length - 1][4] / +k[k.length - 12][1] - 1;
+        out.oiPrice = dOi > 0.002 ? Math.sign(dPx) : 0; // OI가 늘면서 오르면 신규 롱(+), 늘면서 내리면 신규 숏(−)
+      }
+    }
+    if (top.status === 'fulfilled' && top.value.length) out.topLS = Math.sign(Math.round((+top.value[0].longAccount - 0.5) * 1000));
+    if (ctx.status === 'fulfilled' && ctx.value[TA.hlCoin(sym)]) out.funding = Math.sign(+ctx.value[TA.hlCoin(sym)].funding);
+    return out;
   }
   async function whaleText(sym) {
     if (!U.whaleSnapshot) return '고래 데이터 없음';
@@ -324,7 +350,15 @@ ${d.track}
       const tf = series.map((s, i) => tfText(s, TFS[i]));
       const s15 = series[3], d1 = series[0];
       const created = Math.floor(Date.now() / 1000);
-      const [flow, whale, dash] = await Promise.all([flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), whaleText(sym), dashText(sym).catch(e => '방향성 데이터 오류: ' + e.message)]);
+      const [flow, whale, dash, sFlow, sWhale, sDash] = await Promise.all([flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), whaleText(sym), dashText(sym).catch(e => '방향성 데이터 오류: ' + e.message),
+        flowSignals(sym).catch(() => ({})), U.whaleSignals ? U.whaleSignals(TA.hlCoin(sym)).catch(() => null) : null,
+        contextFor(sym).then(ctx => Math.sign(ctx(Date.now() / 1000).score)).catch(() => null)]);
+      // 작성 시점 신호 (Claude 판단과 별개로 대시보드가 계산한 값)
+      const signals = {};
+      tf.forEach((x, i) => Object.entries(x.sig).forEach(([k, v]) => { signals[TFS[i] + '.' + k] = v; }));
+      if (sDash != null) signals.dash = sDash;
+      Object.entries(sFlow).forEach(([k, v]) => { signals['flow.' + k] = v; });
+      Object.entries(sWhale || {}).forEach(([k, v]) => { signals['whale.' + k] = v; });
       const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash, track: trackText() };
       // 리포트에 어떤 데이터가 들어갔는지 기록 (화면의 "반영한 데이터")
       const has = (t, bad) => !!t && !bad.some(b => t.includes(b));
@@ -351,7 +385,7 @@ ${d.track}
         const r = TA.planEval(s15, ctx, { side, entry: plan.entry, tp: Math.abs(plan.target / plan.entry - 1) * 100, sl: Math.abs(plan.stop / plan.entry - 1) * 100, holdHours: 72, amt: 0, lev: 1 });
         odds = { fillRate: r.st.fillRate, winRate: r.st.winRate, win: r.st.win, sl: r.st.sl, timeout: r.st.timeout, filled: r.st.filled, tier: r.tier };
       } catch (e) {}
-      const rep = { id, sym, created, price: d.price, atrD: d.atrD, atr15: d.atr15, plan, claude: c, odds, coverage, result: null, v: 4 };
+      const rep = { id, sym, created, price: d.price, atrD: d.atrD, atr15: d.atr15, plan, claude: c, odds, coverage, signals, result: null, v: 4 };
       if (R.auto) rep.auto = true;
       plan.entryTypeClaimed = c.entryType; plan.entryType = entryTypeOf(rep);
       await saveReport(rep);
@@ -415,7 +449,7 @@ ${d.track}
   }
   U.reportEvaluate = evaluate; // 확인용
   // 매매 테스트 탭이 같은 데이터 수집·Claude 호출을 씁니다.
-  U.repTools = { loadTf, tfText, flowText, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
+  U.repTools = { loadTf, tfText, flowText, flowSignals, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
   const STATUS = {
     waiting: ['warn', '진입 대기'], open: ['warn', '진입 · 진행 중'], win: ['good', '성공'], loss: ['bad', '손절 실패'],
     noentry: ['bad', '진입 실패'], timeout: ['flat', '시간 만료']
@@ -721,6 +755,36 @@ ${await retestData(rep)}
     } catch (e) { box.append(el('p', { class: 'note', text: e.message })); }
   }
 
+  // ---------- 신호별 적중률 ----------
+  const SIG_CHART = [['ema', '추세 (가격·EMA20·EMA50)'], ['ict', 'ICT 구조'], ['ew', '엘리엇 큰 흐름'], ['wy', '와이코프 국면'], ['div', '다이버전스'], ['dip', '대시보드 종합 판독']];
+  const SIG_OTHER = [['dash', '방향성 점수 (차트 분석 탭)'], ['flow.cvd4h', '선물 CVD 4시간 (시장가 순매수)'], ['flow.cvd24h', '선물 CVD 24시간'],
+    ['flow.oiPrice', 'OI·가격 (OI 늘며 상승 +, 늘며 하락 −)'], ['flow.funding', '하이퍼리퀴드 펀딩 (양수 +)'], ['flow.topLS', '바이낸스 상위 트레이더 롱 비중 (50%↑ +)'],
+    ['whale.whaleTilt', '고래 롱·숏 쏠림 (헤지 추정 제외)'], ['whale.smartTilt', '이달 수익 상위 고래 쏠림'], ['whale.liqMagnet', '고래 청산가 자석 (±10%, 많은 쪽)'],
+    ['whale.retailLong', '바이낸스 개인 롱 비중 (50%↑ +)'], ['whale.retailChange', '개인 롱 비중 4시간 변화 (늘면 +)']];
+  const SIG_MIN = 20; // 이보다 적으면 "표본 부족"
+  function sigStat(reps, key) {
+    const g = reps.filter(r => r.signals[key]), hit = g.filter(r => r.signals[key] === r.result.move).length;
+    return { n: g.length, hit, rate: g.length ? hit / g.length : null };
+  }
+  function sigCell(st) {
+    if (!st.n) return el('td', { class: 'r m muted', text: '—' });
+    const pct = Math.round(st.rate * 100), sure = st.n >= SIG_MIN;
+    return el('td', { class: 'r m ' + (sure ? (pct >= 60 ? 'up' : pct <= 40 ? 'down' : '') : 'muted'), text: `${pct}% (${st.n})` });
+  }
+  const sigVerdict = st => !st.n ? '' : st.n < SIG_MIN ? '표본 부족' : st.rate >= 0.6 ? '쓸 만함' : st.rate <= 0.4 ? '반대로 맞음' : '반반';
+  function signalTable(fin) {
+    const reps = fin.filter(r => r.signals && r.result.move);
+    const wrap = el('div', { class: 'pb' }, el('h3', { text: `신호별 적중률 (신호 기록된 리포트 ${reps.length}개)` }),
+      el('p', { class: 'note', text: `리포트를 쓸 때 대시보드가 계산한 신호 방향(Claude 판단과 별개)이 ${RESULT_HOURS}시간 뒤 가격 방향과 같았던 비율입니다. 괄호는 개수, 신호가 없던(0) 리포트는 세지 않습니다. ${SIG_MIN}개 미만은 회색(표본 부족), 60% 이상 초록, 40% 이하 빨강(반대로 쓰면 맞는 신호).` }));
+    if (!reps.length) { wrap.append(el('p', { class: 'note', text: '신호 기록은 10/28부터 작성한 리포트에 붙습니다. 72시간 채점이 끝난 리포트가 생기면 여기에 쌓입니다.' })); return wrap; }
+    const head = ['차트 신호', ...TFS.map(tf => TF_LABEL[tf])];
+    wrap.append(el('div', { class: 'tblwrap' }, el('table', null, el('thead', null, el('tr', null, head.map((h, i) => el('th', { class: i ? 'r' : '', text: h })))),
+      el('tbody', null, SIG_CHART.map(([k, nm]) => el('tr', null, el('td', { text: nm }), TFS.map(tf => sigCell(sigStat(reps, tf + '.' + k)))))))));
+    wrap.append(el('div', { class: 'tblwrap', style: 'margin-top:8px' }, el('table', null, el('thead', null, el('tr', null, ['수급·고래·방향성 신호', '적중률 (개수)', '판정'].map((h, i) => el('th', { class: i ? 'r' : '', text: h })))),
+      el('tbody', null, SIG_OTHER.map(([k, nm]) => { const st = sigStat(reps, k); return el('tr', null, el('td', { text: nm }), sigCell(st), el('td', { class: 'r', text: sigVerdict(st) })); })))));
+    return wrap;
+  }
+
   // ---------- 성적표 ----------
   function renderScore() {
     const box = $('#repScore'); box.textContent = '';
@@ -772,6 +836,7 @@ ${await retestData(rep)}
     });
     cols.append(el('div', null, el('h3', { text: `관점별 방향 적중 (${RESULT_HOURS}시간 뒤)` }), tbl(['관점', '개수', '적중률'], vrows), el('p', { class: 'note', text: '중립으로 본 관점은 세지 않습니다.' })));
     box.append(cols);
+    box.append(signalTable(fin));
     const rvd = reps.filter(r => r.review), left = reps.filter(r => r.result.final && !r.review).length;
     const rvRows = VIEWS.map(([k, nm]) => { const g = rvd.map(r => r.review.views && r.review.views[k] && r.review.views[k].result), ok = g.filter(x => x === '맞음').length, bad = g.filter(x => x === '틀림').length; return el('tr', null, el('td', { text: nm }), el('td', { class: 'r m', text: ok }), el('td', { class: 'r m', text: bad }), el('td', { class: 'r m', text: ok + bad ? Math.round(ok / (ok + bad) * 100) + '%' : '—' })); });
     box.append(el('div', { class: 'pb' }, el('h3', { text: `관점별 사후 검증 (리테스트 ${rvd.length}개)` }), tbl(['관점', '맞음', '틀림', '적중률'], rvRows),
