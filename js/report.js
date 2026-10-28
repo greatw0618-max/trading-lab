@@ -194,6 +194,7 @@
    - 고래 청산가 지도에서 가까운 큰 청산 구간은 목표 후보(자석)나 손절 위험 구간으로 쓴다. 판단에 쓰지 않은 데이터나 데이터가 없던 항목은 dataNotes에 이유와 함께 적는다.
 12. 진입·목표·손절이 각각 어떤 분석법·데이터 근거로 정해졌는지 basis에 적는다.
 13. 확신도(confidence)는 근거가 같은 방향을 가리키는 정도로 정한다. 6개 관점(엘리엇, ICT, 와이코프, 다이버전스, 수급, 고래) 중 리포트 방향과 같은 관점이 5~6개이고 봉끼리 충돌이 없으면 4~5, 3~4개면 2~3, 2개 이하이거나 큰 봉과 충돌하면 1~2. 아래 <지난 리포트 성적>에서 확신도별·방향별 익절률이 낮았던 경우는 한 단계 낮춘다.
+14. 아래 <신호 관측 통계>는 대시보드가 1시간마다 주요 코인의 신호를 기록하고 실제 가격과 비교한 결과다. "검증된 신호"의 확률은 방향 판단의 기본 확률로 쓰고, 검증된 신호와 반대 방향으로 리포트를 쓸 때는 그 이유를 entryReason에 적는다. 검증된 신호가 없으면 이 통계는 판단 근거로 쓰지 않는다.
 
 ${RULES}
 
@@ -243,6 +244,10 @@ ${d.flow}
 ## 고래·청산맵
 ${d.whale}
 </데이터>
+
+<신호 관측 통계>
+${d.obs || '없음'}
+</신호 관측 통계>
 
 <지난 리포트 성적>
 ${d.track}
@@ -359,7 +364,8 @@ ${d.track}
       if (sDash != null) signals.dash = sDash;
       Object.entries(sFlow).forEach(([k, v]) => { signals['flow.' + k] = v; });
       Object.entries(sWhale || {}).forEach(([k, v]) => { signals['whale.' + k] = v; });
-      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash, track: trackText() };
+      const obs = U.obsBrief ? await U.obsBrief(sym, signals).catch(() => '관측 통계를 불러오지 못함') : '관측 기능 없음';
+      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash, obs, track: trackText() };
       // 리포트에 어떤 데이터가 들어갔는지 기록 (화면의 "반영한 데이터")
       const has = (t, bad) => !!t && !bad.some(b => t.includes(b));
       const coverage = [
@@ -370,7 +376,7 @@ ${d.track}
         ['거래소별 시장가 순매수', /\[거래소별 시장가 순매수\] [^\n]*\n/.test(flow) && !/모인 기록 없음/.test(flow)],
         ['하이퍼리퀴드 펀딩·OI', /하이퍼리퀴드/.test(flow)],
         ['고래 · 상위 트레이더 포지션', has(whale, ['고래 데이터 없음', '불러오지 못했습니다'])], ['청산 구간 맵 (상위 트레이더)', /청산 구간 맵/.test(whale)], ['추적 지갑', /추적 지갑/.test(whale)],
-        ['고래 vs 개인 · 스마트머니 · 고래 평단 (513계정 스캔)', /\[고래 vs 개인\]/.test(whale)], ['고래 청산가 지도 (513계정 스캔)', /\[고래 청산가 지도\]/.test(whale)], ['고래 움직임 피드', /고래 움직임:/.test(whale)]
+        ['고래 vs 개인 · 스마트머니 · 고래 평단 (513계정 스캔)', /\[고래 vs 개인\]/.test(whale)], ['고래 청산가 지도 (513계정 스캔)', /\[고래 청산가 지도\]/.test(whale)], ['고래 움직임 피드', /고래 움직임:/.test(whale)], ['신호 관측 통계 (검증된 신호)', /검증된 신호 \(/.test(obs)]
       ];
       const t0 = Date.now();
       const text = await askClaude(buildPrompt(sym, d), n => setStatus(`Claude가 6개 관점을 분석해서 쓰는 중… ${Math.round((Date.now() - t0) / 1000)}초 · ${n.toLocaleString()}자`));
@@ -449,7 +455,7 @@ ${d.track}
   }
   U.reportEvaluate = evaluate; // 확인용
   // 매매 테스트 탭이 같은 데이터 수집·Claude 호출을 씁니다.
-  U.repTools = { loadTf, tfText, flowText, flowSignals, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
+  U.repTools = { loadTf, tfText, flowText, flowSignals, contextFor, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
   const STATUS = {
     waiting: ['warn', '진입 대기'], open: ['warn', '진입 · 진행 중'], win: ['good', '성공'], loss: ['bad', '손절 실패'],
     noentry: ['bad', '진입 실패'], timeout: ['flat', '시간 만료']
@@ -761,6 +767,7 @@ ${await retestData(rep)}
     ['flow.oiPrice', 'OI·가격 (OI 늘며 상승 +, 늘며 하락 −)'], ['flow.funding', '하이퍼리퀴드 펀딩 (양수 +)'], ['flow.topLS', '바이낸스 상위 트레이더 롱 비중 (50%↑ +)'],
     ['whale.whaleTilt', '고래 롱·숏 쏠림 (헤지 추정 제외)'], ['whale.smartTilt', '이달 수익 상위 고래 쏠림'], ['whale.liqMagnet', '고래 청산가 자석 (±10%, 많은 쪽)'],
     ['whale.retailLong', '바이낸스 개인 롱 비중 (50%↑ +)'], ['whale.retailChange', '개인 롱 비중 4시간 변화 (늘면 +)']];
+  Object.assign(U.repTools, { SIG_CHART, SIG_OTHER }); // 신호 자동 관측(obs.js)이 같은 이름을 씁니다
   const SIG_MIN = 20; // 이보다 적으면 "표본 부족"
   function sigStat(reps, key) {
     const g = reps.filter(r => r.signals[key]), hit = g.filter(r => r.signals[key] === r.result.move).length;

@@ -213,6 +213,30 @@ while ($l.IsListening) {
         } catch { Send-Text $ctx 500 'text/plain; charset=utf-8' ('save failed: ' + $_.Exception.Message) }
         continue
       }
+      if ($path -eq 'api/obs/save' -and $ctx.Request.HttpMethod -eq 'POST') {
+        # Signal observations (js/obs.js): the page sends the whole day file obs/<yyyymmdd>.json; obs/index.json lists the days.
+        # push=1 also uploads obs/ to GitHub (the page asks for it every few hours, not every save).
+        try {
+          $day = [string]$ctx.Request.QueryString['day']
+          if (-not ($day -match '^[0-9]{8}$')) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'bad day'; continue }
+          $reader = New-Object IO.StreamReader($ctx.Request.InputStream, [Text.Encoding]::UTF8)
+          $raw = $reader.ReadToEnd()
+          if (-not $raw.StartsWith('[')) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'bad body'; continue }
+          $dir = Join-Path $Root 'obs'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $utf8 = New-Object Text.UTF8Encoding $false
+          [IO.File]::WriteAllText((Join-Path $dir "$day.json"), $raw, $utf8)
+          $days = @(Get-ChildItem $dir -Filter '*.json' | Where-Object { $_.BaseName -match '^[0-9]{8}$' } | ForEach-Object { '"' + $_.BaseName + '"' } | Sort-Object)
+          [IO.File]::WriteAllText((Join-Path $dir 'index.json'), ('{"days":[' + ($days -join ',') + ']}'), $utf8)
+          if ($ctx.Request.QueryString['push'] -eq '1' -and $git -and (Test-Path (Join-Path $Root '.git'))) {
+            $g = $git.Source
+            $cmd = "`$m = New-Object Threading.Mutex(`$false, 'MaemaeLabReportGit'); [void]`$m.WaitOne(); try { & '$g' -C '$Root' add -- obs; & '$g' -C '$Root' commit -q -m 'Save obs $day' -- obs; & '$g' -C '$Root' pull --rebase --autostash -q origin main; & '$g' -C '$Root' push -q origin main } finally { `$m.ReleaseMutex() }"
+            Start-Process powershell -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', $cmd
+          }
+          Send-Text $ctx 200 'application/json; charset=utf-8' '{"saved":true}'
+        } catch { Send-Text $ctx 500 'text/plain; charset=utf-8' ('save failed: ' + $_.Exception.Message) }
+        continue
+      }
       if ($path -eq 'api/ask' -and $ctx.Request.HttpMethod -eq 'POST') {
         $ps = [powershell]::Create(); $ps.RunspacePool = $pool
         [void]$ps.AddScript($askScript).AddArgument($ctx).AddArgument((Get-Claude))
