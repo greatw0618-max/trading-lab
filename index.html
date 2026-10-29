@@ -18,6 +18,7 @@
       <a href="#trade" id="nav-trade" aria-current="page">차트 분석</a>
       <a href="#flow" id="nav-flow">시장 수급</a>
       <a href="#whale" id="nav-whale">고래 추적</a>
+      <a href="#liq" id="nav-liq">청산맵</a>
       <a href="#report" id="nav-report">리포트</a>
       <a href="#test" id="nav-test">매매 테스트</a>
     </nav>
@@ -261,6 +262,31 @@
   <footer><span>포지션 데이터: 하이퍼리퀴드 공개 API. 리더보드: stats-data.hyperliquid.xyz (하루 여러 번 갱신). 고래의 포지션은 참고 정보일 뿐, 따라 하는 것을 권하지 않습니다.</span></footer>
 </div>
 
+<div class="wrap" id="tab-liq" hidden>
+  <section class="panel" aria-label="추정 청산맵">
+    <div class="ph"><h2>추정 청산맵</h2><small>바이낸스·바이빗·OKX·비트겟·하이퍼리퀴드 15분 OI 변화로 계산 · 15분마다 새 자료 · 실제 포지션이 아닌 추정</small></div>
+    <div class="pb lm-ctl">
+      <div class="inrow"><span class="lm-k">화면</span><span class="seg" id="lmViewSeg"><button data-v="map">지도</button><button data-v="price">가격대별</button></span>
+        <span class="lm-k">코인</span><span class="seg" id="lmCoinSeg"><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="XRP">XRP</button><button data-v="HYPE">HYPE</button></span></div>
+      <div class="inrow"><span class="lm-k">거래소</span><span class="seg" id="lmExSeg"><button data-v="binance">바이낸스</button><button data-v="bybit">바이빗</button><button data-v="okx">OKX</button><button data-v="bitget">비트겟</button><button data-v="hl">하이퍼리퀴드</button><button data-v="all">전체</button></span>
+        <span class="lm-k">배수</span><span class="seg" id="lmLevSeg"><button data-v="10">10x</button><button data-v="25">25x</button><button data-v="50">50x</button><button data-v="100">100x</button></span></div>
+      <div class="inrow"><span class="lm-k">봉</span><span class="seg" id="lmTfSeg"><button data-v="15m">15분</button><button data-v="1h">1시간</button><button data-v="4h">4시간</button></span>
+        <span class="lm-k">보기</span><span class="seg" id="lmDaysSeg"><button data-v="3">3일</button><button data-v="7">7일</button><button data-v="14">14일</button><button data-v="30">30일</button><button data-v="60">60일</button></span>
+        <span class="lm-k">롱/숏 나누기</span><span class="seg" id="lmSplitSeg"><button data-v="taker">시장가 비율</button><button data-v="dir">봉 방향 (킹피셔식)</button></span></div>
+      <div class="inrow" id="lmTime" hidden><span class="lm-k">시점</span><button class="btn" id="lmPrev" type="button">◀</button><input type="range" id="lmSlider" min="0" max="0" value="0" style="flex:1;min-width:160px"><span class="m" id="lmAt"></span><button class="btn" id="lmNext" type="button">▶</button><button class="btn" id="lmPlay" type="button">재생</button><button class="btn" id="lmEnd" type="button">끝</button></div>
+      <p class="m lm-sum" id="lmSum"></p>
+    </div>
+    <div class="lm-wrap"><div id="lmCanvasBox"></div><div class="lm-tip" id="lmTip" hidden></div></div>
+    <p class="note pb" id="lmNote"></p>
+  </section>
+  <section class="panel"><div class="ph"><h2>보는 법</h2></div><div class="pb"><ul class="vlist">
+    <li><b>지도</b>: 시간(가로)마다 가격(세로)별로 청산될 물량이 얼마나 남아 있었는지 색으로 보여 줍니다. 파랑 → 초록 → 노랑 → 빨강 순으로 많습니다. 오른쪽 막대는 지금 남은 물량 (위 빨강 = 숏 청산, 아래 초록 = 롱 청산).</li>
+    <li><b>가격대별</b>: 고른 시점에 가격 칸마다 남은 물량을 거래소별로 쌓아 보여 줍니다. 초록 선 = 현재가 아래 롱 청산 누적, 빨강 선 = 위 숏 청산 누적. 시점을 옮기거나 재생하면 물량이 생기고 사라지는 과정을 볼 수 있습니다.</li>
+    <li><b>계산</b>: OI가 늘어난 15분 봉마다 그 봉 평균 가격에 새 포지션이 생겼다고 보고, 롱/숏 비율(시장가 매수 비율 또는 봉 방향)로 나눠 10·25·50·100배 청산가에 쌓습니다 (비중 35·30·20·15%). OI가 줄면 같은 비율로 줄이고, 가격이 지나간 청산가는 지웁니다.</li>
+    <li><b>한계</b>: 거래소는 실제 포지션을 공개하지 않으므로 추정입니다. 바이낸스는 30일, OKX는 약 15일 전부터, 비트겟·하이퍼리퀴드는 수집을 시작한 뒤부터 OI가 있어 그 전에 생긴 물량은 빠집니다.</li>
+  </ul></div></section>
+</div>
+
 <div class="wrap" id="tab-report" hidden>
   <section class="panel">
     <div class="ph"><h2>리포트</h2><small>종목을 고르면 Claude가 15분·1시간·4시간·일봉과 6개 관점(엘리엇·ICT·와이코프·다이버전스·수급·고래)을 종합해 롱/숏 셋업을 씁니다 · 손익비 2:1 이상 · 72시간 뒤 자동 채점</small></div>
@@ -339,6 +365,7 @@
 <script src="js/cvdx.js"></script>
 <script src="js/report.js"></script>
 <script src="js/obs.js"></script>
+<script src="js/liqmap.js"></script>
 <script src="js/tradetest.js"></script>
 <script type="module" src="js/chat.js"></script>
 </body>
