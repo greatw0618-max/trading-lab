@@ -50,6 +50,7 @@
     });
     return (cache[coin] = { price, lines, updated: d.updated });
   }
+  U.liqLines = computeLines; // 리포트 지시문도 같은 선을 씁니다
 
   // ---------- 차트 ----------
   function makeChart() {

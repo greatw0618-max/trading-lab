@@ -179,6 +179,18 @@
     const now = +kl[kl.length - 1][4], sum = (side, lo, hi) => pos.filter(x => x.side === side && x.liq >= lo && x.liq <= hi).reduce((t, x) => t + x.q * x.liq, 0);
     return { price: now, longDn10: sum(1, now * 0.9, now), shortUp10: sum(-1, now, now * 1.1), longDn3: sum(1, now * 0.97, now), shortUp3: sum(-1, now, now * 1.03) };
   }
+  // 추정 청산맵 (청산맵·청산 라인 탭과 같은 계산: 5개 거래소 15분 OI 변화로 추정, 실제 포지션 아님)
+  async function liqLineText(sym) {
+    if (!U.liqLines) return '';
+    try {
+      const r = await U.liqLines(sym), ls = r.lines;
+      if (!ls.length) return '';
+      const row = x => `${x.name} ${fp(x.p)}(${fpct((x.p / r.price - 1) * 100, 1)}, ${fusd(x.v)})`;
+      return [`[추정 청산맵] 바이낸스·바이빗·OKX·비트겟·하이퍼리퀴드 OI 변화로 추정 (실제 포지션 아님, 자료 ${fdt(r.updated / 1000)}). L1·L2 = 현재가 0.2~3% 안 50·100배 청산 덩어리, S1·S2 = 3~10% 안 전체 배수 덩어리, RIP = 15% 안 물량의 80%가 청산되는 가격`,
+        '아래 롱 청산: ' + (ls.filter(x => x.side < 0).map(row).join(' · ') || '없음'),
+        '위 숏 청산: ' + (ls.filter(x => x.side > 0).map(row).join(' · ') || '없음')].join('\n');
+    } catch (e) { return ''; }
+  }
   async function whaleText(sym) {
     if (!U.whaleSnapshot) return '고래 데이터 없음';
     try {
@@ -225,7 +237,8 @@
    - 즉시형(immediate): 현재가에서 15분 ATR(${fp(a15)}) 1배 이내 진입. 이미 근거 자리에 와 있고 바로 출발할 근거가 있을 때.
    - 반드시 알아 둘 것(역선택): 되돌림 지정가는 예측이 맞으면 가격이 바로 가 버려 체결이 안 되고, 예측이 틀릴 때 주로 체결되어 손절로 이어지기 쉽다. 아래 <지난 리포트 성적>에서 진입 방식별 익절률·체결 후 손절률과 손절 원인(방향 문제 / 손절 위치 문제)을 확인하고, 같은 실수를 반복하지 않는 쪽을 고른다.
    - 근거: 15분·1시간 모멘텀(연속 봉 방향, 거래량 배수), 지금 시장 상태, 봉 해석(신규 롱/숏, 청산, 스퀴즈), 선물·현물 CVD, OI 증감, 거래소별 시장가, 방향성 점수, 고래 움직임. entryReason에 왜 이 방식인지, 왜 이 자리에서 손절보다 목표에 먼저 닿을 가능성이 높은지를 숫자로 적는다.
-11. 아래 데이터(4개 봉 판독, 방향성 점수·점검표, 시장 수급 1시간·15분, 지금 시장 상태(가격×OI)·OI 급증 알림, 거래소별 시장가, 하이퍼리퀴드, 고래 vs 개인·스마트머니·고래 평단, 고래 청산가 지도, 고래 움직임 피드, 상위 트레이더 청산맵, 추적 지갑)를 모두 검토한다.
+11. 아래 데이터(4개 봉 판독, 방향성 점수·점검표, 시장 수급 1시간·15분, 지금 시장 상태(가격×OI)·OI 급증 알림, 거래소별 시장가, 하이퍼리퀴드, 고래 vs 개인·스마트머니·고래 평단, 고래 청산가 지도, 고래 움직임 피드, 상위 트레이더 청산맵, 추적 지갑, 추정 청산맵(5개 거래소))를 모두 검토한다.
+   - 추정 청산맵(5개 거래소)의 L1·L2·S1·S2·RIP 선은 **타점(진입·손절·목표 가격)을 정할 때** 쓴다: 손절은 가까운 선 바로 앞에 두지 않고 그 너머에 둔다. 진입 방향 반대쪽의 가까운 선(롱이면 아래 롱 청산 L선, 숏이면 위 숏 청산 L선)은 가격이 먼저 쓸고 올 수 있는 자리이므로 되돌림 진입 구간 후보로 보거나 손절을 그 너머에 둔다. 진입 방향 쪽의 가까운 선(롱이면 위 숏 청산, 숏이면 아래 롱 청산)은 목표 후보(자석)로 본다. 이 맵은 추정이고 아직 검증 전이므로 **방향을 정하는 근거로는 쓰지 않는다.** 쓴 선은 basis에 이름과 가격으로 적는다.
    - 지금 시장 상태가 "하락 추세 가속·롱이 들어오는데 못 오름", "포지션 쌓이는 중" 같은 상태면 진입 타점과 손절 위치에 반영한다 (털릴 쪽 청산 가격대 안쪽에 손절을 두지 않는다).
    - OI 급증 알림이 있으면 털릴 쪽 구간을 목표나 위험 요인에 반영한다.
    - 고래 청산가 지도에서 가까운 큰 청산 구간은 목표 후보(자석)나 손절 위험 구간으로 쓴다. 판단에 쓰지 않은 데이터나 데이터가 없던 항목은 dataNotes에 이유와 함께 적는다.
@@ -280,6 +293,9 @@ ${d.flow}
 
 ## 고래·청산맵
 ${d.whale}
+
+## 추정 청산맵 (5개 거래소)
+${d.liq || '없음 (이 종목은 청산맵 자료가 없음)'}
 </데이터>
 
 <신호 관측 통계>
@@ -392,9 +408,9 @@ ${d.track}
       const tf = series.map((s, i) => tfText(s, TFS[i]));
       const s15 = series[3], d1 = series[0];
       const created = Math.floor(Date.now() / 1000);
-      const [flow, whale, dash, sFlow, sWhale, sDash] = await Promise.all([flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), whaleText(sym), dashText(sym).catch(e => '방향성 데이터 오류: ' + e.message),
+      const [flow, whale, dash, sFlow, sWhale, sDash, liq] = await Promise.all([flowText(sym).catch(e => '수급 데이터 오류: ' + e.message), whaleText(sym), dashText(sym).catch(e => '방향성 데이터 오류: ' + e.message),
         flowSignals(sym).catch(() => ({})), U.whaleSignals ? U.whaleSignals(TA.hlCoin(sym)).catch(() => null) : null,
-        contextFor(sym).then(ctx => Math.sign(ctx(Date.now() / 1000).score)).catch(() => null)]);
+        contextFor(sym).then(ctx => Math.sign(ctx(Date.now() / 1000).score)).catch(() => null), liqLineText(sym)]);
       // 작성 시점 신호 (Claude 판단과 별개로 대시보드가 계산한 값)
       const signals = {};
       tf.forEach((x, i) => Object.entries(x.sig).forEach(([k, v]) => { signals[TFS[i] + '.' + k] = v; }));
@@ -402,7 +418,7 @@ ${d.track}
       Object.entries(sFlow).forEach(([k, v]) => { signals['flow.' + k] = v; });
       Object.entries(sWhale || {}).forEach(([k, v]) => { signals['whale.' + k] = v; });
       const obs = U.obsBrief ? await U.obsBrief(sym, signals).catch(() => '관측 통계를 불러오지 못함') : '관측 기능 없음';
-      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash, obs, track: trackText() };
+      const d = { created, price: s15.c[s15.c.length - 1], atrD: lastOf(TA.atr(d1.h, d1.l, d1.c, 14)), atr15: lastOf(TA.atr(s15.h, s15.l, s15.c, 14)), tf, flow, whale, dash, liq, obs, track: trackText() };
       // 리포트에 어떤 데이터가 들어갔는지 기록 (화면의 "반영한 데이터")
       const has = (t, bad) => !!t && !bad.some(b => t.includes(b));
       const coverage = [
@@ -413,7 +429,7 @@ ${d.track}
         ['거래소별 시장가 순매수', /\[거래소별 시장가 순매수\] [^\n]*\n/.test(flow) && !/모인 기록 없음/.test(flow)],
         ['하이퍼리퀴드 펀딩·OI', /하이퍼리퀴드/.test(flow)],
         ['고래 · 상위 트레이더 포지션', has(whale, ['고래 데이터 없음', '불러오지 못했습니다'])], ['청산 구간 맵 (상위 트레이더)', /청산 구간 맵/.test(whale)], ['추적 지갑', /추적 지갑/.test(whale)],
-        ['고래 vs 개인 · 스마트머니 · 고래 평단 (513계정 스캔)', /\[고래 vs 개인\]/.test(whale)], ['고래 청산가 지도 (513계정 스캔)', /\[고래 청산가 지도\]/.test(whale)], ['고래 움직임 피드', /고래 움직임:/.test(whale)], ['신호 관측 통계 (검증된 신호)', /검증된 신호 \(/.test(obs)]
+        ['고래 vs 개인 · 스마트머니 · 고래 평단 (513계정 스캔)', /\[고래 vs 개인\]/.test(whale)], ['고래 청산가 지도 (513계정 스캔)', /\[고래 청산가 지도\]/.test(whale)], ['고래 움직임 피드', /고래 움직임:/.test(whale)], ['추정 청산맵 · 청산 라인 (5개 거래소 OI)', /\[추정 청산맵\]/.test(liq)], ['신호 관측 통계 (검증된 신호)', /검증된 신호 \(/.test(obs)]
       ];
       const t0 = Date.now();
       const text = await askClaude(buildPrompt(sym, d), n => setStatus(`Claude가 6개 관점을 분석해서 쓰는 중… ${Math.round((Date.now() - t0) / 1000)}초 · ${n.toLocaleString()}자`));
@@ -492,7 +508,7 @@ ${d.track}
   }
   U.reportEvaluate = evaluate; // 확인용
   // 매매 테스트 탭이 같은 데이터 수집·Claude 호출을 씁니다.
-  U.repTools = { loadTf, tfText, flowText, flowSignals, estLiqMap, contextFor, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
+  U.repTools = { loadTf, tfText, flowText, flowSignals, estLiqMap, liqLineText, contextFor, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
   const STATUS = {
     waiting: ['warn', '진입 대기'], open: ['warn', '진입 · 진행 중'], win: ['good', '성공'], loss: ['bad', '손절 실패'],
     noentry: ['bad', '진입 실패'], timeout: ['flat', '시간 만료']
