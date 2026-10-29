@@ -19,6 +19,7 @@
       <a href="#flow" id="nav-flow">시장 수급</a>
       <a href="#whale" id="nav-whale">고래 추적</a>
       <a href="#liq" id="nav-liq">청산맵</a>
+      <a href="#lines" id="nav-lines">청산 라인</a>
       <a href="#report" id="nav-report">리포트</a>
       <a href="#test" id="nav-test">매매 테스트</a>
     </nav>
@@ -287,6 +288,26 @@
   </ul></div></section>
 </div>
 
+<div class="wrap" id="tab-lines" hidden>
+  <section class="panel" aria-label="청산 라인 차트">
+    <div class="ph"><h2>청산 라인 차트</h2>
+      <span class="ph-right"><span class="seg" id="llCoinSeg"><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="XRP">XRP</button><button data-v="HYPE">HYPE</button></span>
+      <span class="seg" id="llTfSeg"><button data-v="15m">15분</button><button data-v="1h">1시간</button><button data-v="4h">4시간</button><button data-v="1d">일봉</button></span></span>
+    </div>
+    <p class="note pb" style="margin-bottom:0">하이퍼리퀴드 봉 · <span style="color:#e0a106;font-weight:700">EMA50</span> · <span style="color:#5b8def;font-weight:700">EMA200</span> · 가로선은 청산맵 탭의 추정 청산맵에서 물량이 몰린 가격</p>
+    <div id="llChart" style="height:560px;margin:8px 12px"></div>
+    <p class="note pb" id="llNote"></p>
+  </section>
+  <section class="panel"><div class="ph"><h2>지금 그려진 선</h2><small>위에서 아래로 가격 순</small></div><div class="pb" id="llTable"></div></section>
+  <section class="panel"><div class="ph"><h2>선 고르는 방법</h2></div><div class="pb"><ul class="vlist">
+    <li><b>L1·L2 (단타 라인, 점선)</b>: 50·100배 물량만 계산한 청산맵에서 현재가 0.2~3% 안의 가장 큰 덩어리 2개. 가까운 쪽이 L1.</li>
+    <li><b>S1·S2 (스윙 라인, 실선)</b>: 10~100배 전체 청산맵에서 3~10% 안의 가장 큰 덩어리 2개.</li>
+    <li><b>RIP (레버리지 청소, 굵은 선)</b>: 현재가에서 15% 안에 있는 그쪽 물량의 80%가 청산되는 가격.</li>
+    <li>빨강 = 현재가 위 숏 청산 자리, 초록 = 아래 롱 청산 자리. 청산맵 자료가 15분마다 바뀌면 선도 다시 그립니다.</li>
+    <li>트레이더 송백 영상의 선 종류를 흉내 낸 자동 선입니다. 영상에서 선 긋는 방법은 공개되지 않아 똑같지 않고, 청산맵 자체도 추정입니다.</li>
+  </ul></div></section>
+</div>
+
 <div class="wrap" id="tab-report" hidden>
   <section class="panel">
     <div class="ph"><h2>리포트</h2><small>종목을 고르면 Claude가 15분·1시간·4시간·일봉과 6개 관점(엘리엇·ICT·와이코프·다이버전스·수급·고래)을 종합해 롱/숏 셋업을 씁니다 · 손익비 2:1 이상 · 72시간 뒤 자동 채점</small></div>
@@ -366,6 +387,7 @@
 <script src="js/report.js"></script>
 <script src="js/obs.js"></script>
 <script src="js/liqmap.js"></script>
+<script src="js/liqlines.js"></script>
 <script src="js/tradetest.js"></script>
 <script type="module" src="js/chat.js"></script>
 </body>

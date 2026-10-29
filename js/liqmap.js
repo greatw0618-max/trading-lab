@@ -30,16 +30,16 @@
   // ---------- 추정 모델 ----------
   // 전체 60일을 15분 단위로 한 번 계산하고, 화면 봉(15분·1시간·4시간)이 끝날 때마다 가격별 남은 물량을 저장합니다.
   function niceStep(v) { const p = 10 ** Math.floor(Math.log10(v)), m = v / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; }
-  function build(d) {
+  function build(d, o = S) { // o: { ex, lev, days, tf, split } — 청산 라인 탭도 같은 계산을 씁니다
     const bars = d.bars, N = bars.length; if (N < 10) throw new Error('봉 자료가 부족합니다');
     let lo = Infinity, hi = -Infinity; bars.forEach(b => { if (b[3] < lo) lo = b[3]; if (b[2] > hi) hi = b[2]; });
     const pmin = lo * 0.86, pmax = hi * 1.14, step = niceStep((pmax - pmin) / 700), b0 = Math.floor(pmin / step), nb = Math.ceil(pmax / step) - b0 + 1;
     const priceOf = i => (b0 + i) * step, binOf = p => Math.max(0, Math.min(nb - 1, Math.round(p / step) - b0));
-    const levs = LEV.filter(([L]) => S.lev.has(L)), wsum = levs.reduce((t, [, w]) => t + w, 0) || 1;
-    const exs = EX.map(e => e[0]).filter(e => S.ex.has(e));
+    const levs = LEV.filter(([L]) => o.lev.has(L)), wsum = levs.reduce((t, [, w]) => t + w, 0) || 1;
+    const exs = EX.map(e => e[0]).filter(e => o.ex.has(e));
     const L = {}, Sh = {}, last = {};
     exs.forEach(e => { L[e] = new Float64Array(nb); Sh[e] = new Float64Array(nb); last[e] = null; });
-    const per = TF[S.tf], from = Math.max(0, N - Math.round(S.days * 96)), snaps = [], cols = [];
+    const per = TF[o.tf], from = Math.max(0, N - Math.round(o.days * 96)), snaps = [], cols = [];
     const stats = []; // 봉마다 새로 생김·스스로 사라짐·청산으로 사라짐 (달러, 고른 거래소 합)
     let curStat = { add: 0, close: 0, liq: 0 };
     for (let i = 0; i < N; i++) {
@@ -61,7 +61,7 @@
         const dq = end - prev, A = L[e], B = Sh[e];
         if (dq > 0) {
           const own = d.buy[e] && d.buy[e][t];
-          const share = S.split === 'taker' ? (own != null ? own : bnBuy) : Math.max(0.15, Math.min(0.85, 0.5 + 0.5 * (h > l ? (c - o) / (h - l) : 0)));
+          const share = o.split === 'taker' ? (own != null ? own : bnBuy) : Math.max(0.15, Math.min(0.85, 0.5 + 0.5 * (h > l ? (c - o) / (h - l) : 0)));
           const px = (h + l + c) / 3;
           levs.forEach(([lev, w]) => {
             const q = dq * w / wsum;
@@ -290,6 +290,8 @@
       try { const r = await fetch('liqmap/index.json?v=' + Date.now(), { cache: 'no-store' }); const x = await r.json(); if (S.model && x.updated > S.model.updated) { delete S.data[S.coin]; refresh(true); } } catch (e) {}
     }, 120e3);
   }
+  // 청산 라인 탭(liqlines.js)용
+  U.liqModel = { EX, loadData, build };
   window.addEventListener('tabchange', e => { if (e.detail === 'liq') start(); });
   if (U.activeTab() === 'liq') start();
 })();
