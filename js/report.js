@@ -140,7 +140,44 @@
     }
     if (top.status === 'fulfilled' && top.value.length) out.topLS = Math.sign(Math.round((+top.value[0].longAccount - 0.5) * 1000));
     if (ctx.status === 'fulfilled' && ctx.value[TA.hlCoin(sym)]) out.funding = Math.sign(+ctx.value[TA.hlCoin(sym)].funding);
+    // 청산맵 영상 가설 (learning/청산맵_영상학습_2026-10-29.md)
+    const tilt = (a, b) => a > b * 1.5 ? 1 : b > a * 1.5 ? -1 : 0; // 한쪽이 1.5배 넘게 많을 때만
+    const m = await estLiqMap(sym).catch(() => null);
+    if (m) { out.estTilt = tilt(m.shortUp10, m.longDn10); out.estNear = tilt(m.shortUp3, m.longDn3); } // 가설 1·2: 위 숏이 많으면 +
+    const lp = U.liqPrints ? U.liqPrints(sym, H) : null; // 가설 3: 최근 1시간 강제청산
+    if (lp && lp.long + lp.short >= (sym === 'BTC' || sym === 'ETH' ? 1e6 : 2.5e5)) out.liqRev = lp.long > lp.short * 2 ? 1 : lp.short > lp.long * 2 ? -1 : 0; // 롱이 대량으로 털렸으면 반등(+)
+    try { // 가설 4: OI가 늘 때 현물 시장가 순매수 방향
+      const sk = await bj(`https://api.binance.com/api/v3/klines?symbol=${p}&interval=1h&limit=5`), s4 = sk.slice(0, -1);
+      const o = oi.status === 'fulfilled' ? oi.value : [], dOi4 = o.length >= 5 ? +o[o.length - 1].sumOpenInterest / +o[o.length - 5].sumOpenInterest - 1 : 0;
+      out.oiSpot = dOi4 > 0.003 ? Math.sign(s4.reduce((t, x) => t + 2 * (+x[9]) - (+x[5]), 0)) : 0;
+    } catch (e) {}
     return out;
+  }
+  // 추정 청산맵 (킹피셔식 역추산의 단순판): 바이낸스 15분 OI가 늘어난 봉마다 그 가격에 새 포지션이 생겼다고 보고
+  // 시장가 매수 비중으로 롱·숏을 나눈 뒤, 레버리지 10·25·50·100배 비율로 청산가를 만듭니다. OI가 줄면 비율대로 지우고,
+  // 가격이 청산가를 지나가면 청산된 것으로 지웁니다. 실제 포지션이 아니라 추정입니다.
+  const EST_LEV = [[10, 0.35], [25, 0.3], [50, 0.2], [100, 0.15]];
+  async function estLiqMap(sym) {
+    const p = sym + 'USDT', F = 'https://fapi.binance.com';
+    const [kl, oi] = await Promise.all([bj(`${F}/fapi/v1/klines?symbol=${p}&interval=15m&limit=500`), bj(`${F}/futures/data/openInterestHist?symbol=${p}&period=15m&limit=500`)]);
+    const oiAt = new Map(oi.map(x => [+x.timestamp, +x.sumOpenInterest]));
+    let prev = null, pos = [];
+    for (const k of kl) {
+      const t = +k[0], h = +k[2], l = +k[3], c = +k[4];
+      pos = pos.filter(x => x.side > 0 ? l > x.liq : h < x.liq); // 이 봉에서 청산가를 지나간 물량은 청산됨
+      const cur = oiAt.get(t + 15 * 60e3) ?? oiAt.get(t); // OI 기록은 봉 끝 시각
+      if (cur == null) continue;
+      if (prev != null) {
+        const d = cur - prev;
+        if (d > 0) {
+          const buy = +k[5] ? +k[9] / +k[5] : 0.5, px = (h + l + c) / 3;
+          EST_LEV.forEach(([L, w]) => { pos.push({ side: 1, liq: px * (1 - 1 / L), q: d * buy * w }); pos.push({ side: -1, liq: px * (1 + 1 / L), q: d * (1 - buy) * w }); });
+        } else if (d < 0 && prev > 0) { const f = cur / prev; pos.forEach(x => { x.q *= f; }); }
+      }
+      prev = cur;
+    }
+    const now = +kl[kl.length - 1][4], sum = (side, lo, hi) => pos.filter(x => x.side === side && x.liq >= lo && x.liq <= hi).reduce((t, x) => t + x.q * x.liq, 0);
+    return { price: now, longDn10: sum(1, now * 0.9, now), shortUp10: sum(-1, now, now * 1.1), longDn3: sum(1, now * 0.97, now), shortUp3: sum(-1, now, now * 1.03) };
   }
   async function whaleText(sym) {
     if (!U.whaleSnapshot) return '고래 데이터 없음';
@@ -455,7 +492,7 @@ ${d.track}
   }
   U.reportEvaluate = evaluate; // 확인용
   // 매매 테스트 탭이 같은 데이터 수집·Claude 호출을 씁니다.
-  U.repTools = { loadTf, tfText, flowText, flowSignals, contextFor, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
+  U.repTools = { loadTf, tfText, flowText, flowSignals, estLiqMap, contextFor, whaleText, dashText, trackText, askClaude, parseJson, RULES, TFS, TF_LABEL };
   const STATUS = {
     waiting: ['warn', '진입 대기'], open: ['warn', '진입 · 진행 중'], win: ['good', '성공'], loss: ['bad', '손절 실패'],
     noentry: ['bad', '진입 실패'], timeout: ['flat', '시간 만료']
@@ -766,7 +803,9 @@ ${await retestData(rep)}
   const SIG_OTHER = [['dash', '방향성 점수 (차트 분석 탭)'], ['flow.cvd4h', '선물 CVD 4시간 (시장가 순매수)'], ['flow.cvd24h', '선물 CVD 24시간'],
     ['flow.oiPrice', 'OI·가격 (OI 늘며 상승 +, 늘며 하락 −)'], ['flow.funding', '하이퍼리퀴드 펀딩 (양수 +)'], ['flow.topLS', '바이낸스 상위 트레이더 롱 비중 (50%↑ +)'],
     ['whale.whaleTilt', '고래 롱·숏 쏠림 (헤지 추정 제외)'], ['whale.smartTilt', '이달 수익 상위 고래 쏠림'], ['whale.liqMagnet', '고래 청산가 자석 (±10%, 많은 쪽)'],
-    ['whale.retailLong', '바이낸스 개인 롱 비중 (50%↑ +)'], ['whale.retailChange', '개인 롱 비중 4시간 변화 (늘면 +)']];
+    ['whale.retailLong', '바이낸스 개인 롱 비중 (50%↑ +)'], ['whale.retailChange', '개인 롱 비중 4시간 변화 (늘면 +)'],
+    ['flow.estTilt', '[영상 가설 1] 추정 청산맵 쏠림 ±10% (위 숏이 1.5배↑ +)'], ['flow.estNear', '[영상 가설 2] 가까운 고배 청산 ±3% (위 숏이 1.5배↑ +)'],
+    ['flow.liqRev', '[영상 가설 3] 대량 강제청산 후 반대 방향 (1시간, 롱이 털렸으면 +)'], ['flow.oiSpot', '[영상 가설 4] OI 증가 + 현물 순매수 방향']];
   Object.assign(U.repTools, { SIG_CHART, SIG_OTHER }); // 신호 자동 관측(obs.js)이 같은 이름을 씁니다
   const SIG_MIN = 20; // 이보다 적으면 "표본 부족"
   function sigStat(reps, key) {

@@ -168,11 +168,37 @@
     box.append(pb);
   }
 
+  // ---------- 바이낸스 실시간 강제청산 (청산맵 영상 가설 3) ----------
+  // 바이낸스 선물이 무료로 공개하는 강제청산 체결(종목별 1초에 1건까지)을 모읍니다. SELL = 롱이 청산됨, BUY = 숏이 청산됨.
+  // 이 탭이 연결된 뒤 충분한 시간이 지나야 값을 돌려줍니다 (중간에 끊겼으면 모자란 값이 되므로).
+  const LIQ = { list: [], since: null, ws: null };
+  function liqConnect() {
+    try {
+      const ws = new WebSocket('wss://fstream.binance.com/market/ws/!forceOrder@arr'); LIQ.ws = ws;
+      ws.onopen = () => { if (LIQ.since == null) LIQ.since = Date.now() / 1000; };
+      ws.onmessage = e => {
+        try {
+          const o = JSON.parse(e.data).o, c = o.s.replace(/USDT$/, '');
+          if (!COINS.includes(c)) return;
+          LIQ.list.push({ t: o.T / 1000, c, side: o.S === 'SELL' ? 1 : -1, usd: +o.z * +o.ap });
+          const cut = Date.now() / 1000 - 24 * H; while (LIQ.list.length && LIQ.list[0].t < cut) LIQ.list.shift();
+        } catch (err) {}
+      };
+      ws.onclose = () => { LIQ.since = null; LIQ.list = []; setTimeout(liqConnect, 30e3); }; // 끊기면 처음부터 다시 셉니다
+    } catch (e) {}
+  }
+  U.liqPrints = (coin, sec) => {
+    const now = Date.now() / 1000;
+    if (LIQ.since == null || now - LIQ.since < sec) return null;
+    const g = LIQ.list.filter(x => x.c === coin && x.t >= now - sec);
+    return { long: g.filter(x => x.side > 0).reduce((t, x) => t + x.usd, 0), short: g.filter(x => x.side < 0).reduce((t, x) => t + x.usd, 0), n: g.length };
+  };
+
   // ---------- 시작 ----------
   (async () => {
     try { const r = await fetch('api/ask/status', { headers: { 'X-Dashboard': '1' }, cache: 'no-store' }); O.local = r.ok; } catch (e) {}
     if (U.activeTab() === 'report') render();
-    if (O.local) { setTimeout(observe, 90e3); setInterval(observe, 5 * 60e3); }
+    if (O.local) { liqConnect(); setTimeout(observe, 90e3); setInterval(observe, 5 * 60e3); }
   })();
   window.addEventListener('tabchange', e => { if (e.detail === 'report') render(); });
   U.obsTest = { stats: () => { O.stats = null; return stats(); }, observe, rows };
