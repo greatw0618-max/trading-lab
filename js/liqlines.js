@@ -59,6 +59,7 @@
       grid: { vertLines: { color: cv('--grid') }, horzLines: { color: cv('--grid') } }, rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: S.tf !== '1d' },
       localization: { locale: 'ko-KR' }
     });
+    S.resetPan = U.freePan(S.chart, box); // 차트를 눌러 위아래로 끌기, 더블클릭 = 자동 맞춤
     const up = cv('--up'), dn = cv('--down');
     S.candle = S.chart.addCandlestickSeries({ upColor: up, downColor: dn, wickUpColor: up, wickDownColor: dn, borderVisible: false });
     S.ema = [[50, '#e0a106'], [200, '#5b8def']].map(([n, c]) => ({ n, s: S.chart.addLineSeries({ color: c, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }) }));
@@ -79,7 +80,7 @@
         price: x.p, color: COL[x.side], lineWidth: x.kind === 'RIP' ? 3 : x.kind === 'S' ? 2 : 1,
         lineStyle: x.kind === 'L' ? LW.LineStyle.Dashed : LW.LineStyle.Solid, axisLabelVisible: true, title: `${x.name} ${x.sideName} ${fusd(x.v)}`
       })));
-      if (!S.fitted) { S.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 160), to: n + 5 }); S.fitted = true; }
+      if (!S.fitted) { S.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 160), to: n + 5 }); S.resetPan(); S.fitted = true; }
       // 선 목록
       const MEAN = { L: '단타 라인: 고배율(50·100배) 물량. 반응은 잘 나오지만 실패도 잦음 → 0.5~1%에서 반익절', S: '스윙 라인: 큰 물량 덩어리. 닿으면 큰 저항·급락·횡보가 나오기 쉬움', RIP: '레버리지 청소: 이 가격까지 가면 그쪽 물량(현재가 15% 안)의 80%가 청산됨' };
       const tb = $('#llTable'); tb.textContent = '';

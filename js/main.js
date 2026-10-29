@@ -39,6 +39,16 @@
     if (kind === 'err' && msg) { b.textContent = msg; b.hidden = false; } else if (kind === 'ok') b.hidden = true;
   }
   TA.ui = { store, el, fp, fpct, fusd, fdt, fdur, chip, setStatus, toneOf };
+  // 차트를 누르고 위아래로 끌면 가격도 움직이게 합니다 (가격 자동 맞춤을 끔). 더블클릭하면 다시 자동 맞춤.
+  // onMove: 끄는 동안 다시 그려야 할 것(구간 상자 등)이 있으면 부름. 돌려주는 함수 = 자동 맞춤으로 되돌리기
+  TA.ui.freePan = (chart, box, onMove) => {
+    const ps = () => chart.priceScale('right');
+    const off = () => { if (ps().options().autoScale) ps().applyOptions({ autoScale: false }); };
+    box.addEventListener('pointerdown', off, true); box.addEventListener('mousedown', off, true); box.addEventListener('touchstart', off, { capture: true, passive: true }); // 차트가 끌기를 시작하기 전에
+    box.addEventListener('dblclick', () => { ps().applyOptions({ autoScale: true }); if (onMove) onMove(); });
+    if (onMove) { box.addEventListener('pointermove', e => { if (e.buttons) onMove(); }); box.addEventListener('wheel', () => onMove(), { passive: true }); }
+    return () => ps().applyOptions({ autoScale: true });
+  };
 
   if (!LW) { setStatus('err', '차트 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침하세요.'); return; }
 
@@ -106,6 +116,7 @@
   const ov = $('#ov');
   function queueZones() { if (zq) return; zq = true; requestAnimationFrame(() => { zq = false; drawZones(); }); }
   new ResizeObserver(queueZones).observe($('#cMain'));
+  const resetPan = TA.ui.freePan(main, $('#cMain'), () => queueZones());
   function drawZones() {
     const box = $('#cMain').getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
     ov.width = box.width * dpr; ov.height = box.height * dpr; ov.style.width = box.width + 'px'; ov.style.height = box.height + 'px';
@@ -201,7 +212,7 @@
     if (keepRange && range && prevLen) {
       const add = n - prevLen;
       ts.setVisibleLogicalRange(range.to >= prevLen - 3 ? { from: range.from + add, to: range.to + add } : range);
-    } else { ts.applyOptions({ barSpacing: 7 }); ts.scrollToRealTime(); }
+    } else { ts.applyOptions({ barSpacing: 7 }); ts.scrollToRealTime(); resetPan(); }
     S.prevLen = n;
     legend(null); queueZones(); drawPlanLines();
     const upd = s.updated ? new Date(s.updated) : null;
