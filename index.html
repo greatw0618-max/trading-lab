@@ -21,7 +21,6 @@
       <a href="#liq" id="nav-liq">청산맵</a>
       <a href="#lines" id="nav-lines">청산 라인</a>
       <a href="#report" id="nav-report">리포트</a>
-      <a href="#test" id="nav-test">매매 테스트</a>
     </nav>
     <div class="spacer"></div>
     <div class="status"><span class="dot" id="dot"></span><span id="stxt">불러오는 중…</span></div>
@@ -61,7 +60,6 @@
         <label><input type="checkbox" id="t-ict"><span class="sw" style="background:var(--ema1)"></span>ICT (FVG·오더블록·구조)</label>
         <label><input type="checkbox" id="t-wy"><span class="sw" style="background:var(--zone-wy);outline:1px solid var(--wave)"></span>와이코프 박스</label>
         <label><input type="checkbox" id="t-div"><span class="sw" style="background:linear-gradient(90deg,var(--up) 50%,var(--down) 50%)"></span>다이버전스</label>
-        <label><input type="checkbox" id="t-tr"><span class="sw" style="background:var(--accent)"></span>진입·목표·손절 선</label>
         <label><input type="checkbox" id="t-e10"><span class="sw" style="background:var(--e10)"></span>EMA 10</label>
         <label><input type="checkbox" id="t-e20"><span class="sw" style="background:var(--e20)"></span>EMA 20</label>
         <label><input type="checkbox" id="t-e60"><span class="sw" style="background:var(--e60)"></span>EMA 60</label>
@@ -116,26 +114,6 @@
       <textarea id="chatIn" rows="2" placeholder="궁금한 걸 물어보세요. Enter로 보내기, Shift+Enter로 줄바꿈" aria-label="질문"></textarea>
       <button type="submit" class="btn primary" id="chatSend">보내기</button>
     </form>
-  </section>
-
-  <section class="panel" id="plan">
-    <div class="ph"><h2>예상 투자 결과</h2>
-      <span class="ph-right"><small id="planCtx">지금 보고 있는 차트 기준으로 계산합니다</small><button type="button" class="btn" id="pReset" title="입력값을 처음 상태로 되돌립니다">초기화</button></span>
-    </div>
-    <form class="params" id="planForm">
-      <div class="field"><span>방향</span>
-        <div class="seg" id="pDir" role="group" aria-label="방향"><button type="button" data-v="1">롱 (오른다)</button><button type="button" data-v="-1">숏 (내린다)</button></div>
-      </div>
-      <label>진입가
-        <span class="inrow"><input id="pEntry" type="number" step="any" min="0" placeholder="가격 입력"><button type="button" class="btn" id="pNow">현재가</button></span>
-      </label>
-      <label>목표 수익 (%)<input id="pTp" type="number" step="0.1" min="0.1" value="2" placeholder="예: 2"></label>
-      <label>손절 (%, 0 = 안 함)<input id="pSl" type="number" step="0.5" min="0" value="0" placeholder="0"></label>
-      <label>최대 보유 기간<select id="pHold"><option value="4">4시간</option><option value="24" selected>1일</option><option value="72">3일</option><option value="168">1주</option></select></label>
-      <label>투자금 (USD, 선택)<input id="pAmt" type="number" min="0" step="any" placeholder="예: 1000"></label>
-      <label>레버리지 (배)<input id="pLev" type="number" min="1" max="50" step="1" value="1" placeholder="1"></label>
-    </form>
-    <div id="planOut"><div class="pb"><p class="note">차트를 불러오는 중…</p></div></div>
   </section>
 
   <section class="panel">
@@ -333,48 +311,6 @@
   <footer><span>리포트는 Claude가 대시보드 판독(하이퍼리퀴드 15분·1시간·4시간·일봉), 바이낸스·하이퍼리퀴드 수급, 하이퍼리퀴드 상위 트레이더 포지션으로 작성합니다. 채점은 하이퍼리퀴드 15분봉 기준이며 같은 봉에서 목표와 손절이 둘 다 닿으면 손절로 셉니다. 투자 자문이 아닙니다.</span></footer>
 </div>
 
-<div class="wrap" id="tab-test" hidden>
-  <section class="panel">
-    <div class="ph"><h2>매매 테스트</h2><small>차트를 보고 포지션을 잡아 보세요 · 24시간 안에 진입가에 닿아야 진입(안 닿으면 진입 실패) · 진입 후 익절·손절 중 먼저 닿은 쪽으로 채점 · 저장하면 Claude 사전 평가, 결과가 나오면 Claude 사후 분석</small></div>
-    <div class="controls">
-      <div class="seg" id="ttSym" role="group" aria-label="종목">
-        <button data-v="SOXL">SOXL</button><button data-v="KORU">KORU</button><button data-v="BTC">BTC</button><button data-v="ETH">ETH</button><button data-v="SOL">SOL</button><button data-v="HYPE">HYPE</button>
-      </div>
-      <form class="search" id="ttSymForm" role="search">
-        <input id="ttSymIn" list="symList" placeholder="다른 종목 (XRP, TSLA…)" aria-label="매매 테스트 종목 검색" autocomplete="off" spellcheck="false">
-        <button class="btn" type="submit">선택</button>
-      </form>
-      <span class="muted">선택: <b id="ttPick"></b></span>
-    </div>
-    <form class="params" id="ttParams">
-      <div class="field"><span>방향</span>
-        <div class="seg" id="ttDir" role="group" aria-label="방향"><button type="button" data-v="1">롱 (오른다)</button><button type="button" data-v="-1">숏 (내린다)</button></div>
-      </div>
-      <label>진입가 (지정가)
-        <span class="inrow"><input id="ttEntry" type="number" step="any" min="0" placeholder="가격 입력"><button type="button" class="btn" id="ttNow">현재가</button></span>
-      </label>
-      <label>목표 수익 (%)<input id="ttTp" type="number" step="0.1" min="0.1" value="2" placeholder="예: 2"></label>
-      <label>손절 (%)<input id="ttSl" type="number" step="0.1" min="0.1" value="1" placeholder="예: 1"></label>
-      <label>투자금 (USD, 선택)<input id="ttAmt" type="number" min="0" step="any" placeholder="예: 1000"></label>
-      <label>레버리지 (배)<input id="ttLev" type="number" min="1" max="50" step="1" value="1"></label>
-      <label class="tt-memo-in">잡은 이유 (메모)<textarea id="ttMemo" rows="2" placeholder="예: 1시간 상승 CHoCH 뒤 눌림, FVG 하단에서 반등"></textarea></label>
-    </form>
-    <div id="ttPreview"></div>
-    <div class="tt-chart" id="ttChart"></div>
-    <div class="controls tt-save"><button class="btn primary" id="ttSave" type="button">이 포지션 저장</button><span class="muted" id="ttStatus" style="font-size:12.5px"></span></div>
-  </section>
-  <div class="rep-grid">
-    <aside class="panel" id="ttList" aria-label="매매 기록"></aside>
-    <div id="ttView"></div>
-  </div>
-  <section class="panel" id="ttScore" aria-label="내 매매 성적표"></section>
-  <section class="panel" aria-label="전체 기록 종합 분석">
-    <div class="ph"><h2>전체 기록 종합 분석</h2><span class="ph-right"><small id="ttRevStatus"></small><button class="btn primary" id="ttRevGo" type="button">Claude 종합 분석</button></span></div>
-    <div class="pb tt-review" id="ttRevBody"></div>
-  </section>
-  <footer><span>매매 테스트는 연습 기록입니다. 차트 분석 탭의 자동 판독 규칙은 바꾸지 않습니다. 채점은 하이퍼리퀴드 15분봉 기준입니다. 저장 후 24시간 안에 진입가에 닿아야 진입하고, 진입한 봉에서 손절가도 닿거나 같은 봉에서 익절과 손절이 둘 다 닿으면 손절로 셉니다. 투자 자문이 아닙니다.</span></footer>
-</div>
-
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="js/indicators.js"></script>
 <script src="js/analysis.js"></script>
@@ -388,7 +324,6 @@
 <script src="js/obs.js"></script>
 <script src="js/liqmap.js"></script>
 <script src="js/liqlines.js"></script>
-<script src="js/tradetest.js"></script>
 <script type="module" src="js/chat.js"></script>
 </body>
 </html>

@@ -183,10 +183,10 @@ while ($l.IsListening) {
       }
       if (($path -eq 'api/report/save' -or $path -eq 'api/save') -and $ctx.Request.HttpMethod -eq 'POST') {
         # Saves one record as <kind>/<id>.json and keeps <kind>/index.json in sync.
-        # kind: reports (리포트 탭), trades (매매 테스트), reviews (매매 테스트 전체 분석)
+        # kind: reports (리포트 탭)
         try {
           $kind = if ($path -eq 'api/report/save') { 'reports' } else { [string]$ctx.Request.QueryString['kind'] }
-          if (@('reports', 'trades', 'reviews') -notcontains $kind) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'bad kind'; continue }
+          if (@('reports') -notcontains $kind) { Send-Text $ctx 400 'text/plain; charset=utf-8' 'bad kind'; continue }
           $reader = New-Object IO.StreamReader($ctx.Request.InputStream, [Text.Encoding]::UTF8)
           $raw = $reader.ReadToEnd()
           $rep = $raw | ConvertFrom-Json

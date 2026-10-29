@@ -54,7 +54,7 @@
 
   // ---------- 상태 ----------
   const S = { sym: store.get('sym', 'SOXL'), tf: store.get('tf', '15m'), src: store.get('src', 'hl'), load: 0, key: null, series: null, an: null, bt: null };
-  const show = { ew: true, ict: true, wy: true, div: true, tr: true, e10: true, e20: true, e60: true, e120: true };
+  const show = { ew: true, ict: true, wy: true, div: true, e10: true, e20: true, e60: true, e120: true };
   // 예전 버전에 저장된 설정 중 지금 없는 항목(예: ema)은 무시합니다.
   try { const saved = JSON.parse(store.get('show', '{}')); Object.keys(show).forEach(k => { if (typeof saved[k] === 'boolean') show[k] = saved[k]; }); } catch (e) {}
   const EMA_LEN = [10, 20, 60, 120];
@@ -214,7 +214,7 @@
       ts.setVisibleLogicalRange(range.to >= prevLen - 3 ? { from: range.from + add, to: range.to + add } : range);
     } else { ts.applyOptions({ barSpacing: 7 }); ts.scrollToRealTime(); resetPan(); }
     S.prevLen = n;
-    legend(null); queueZones(); drawPlanLines();
+    legend(null); queueZones();
     const upd = s.updated ? new Date(s.updated) : null;
     $('#srcNote').textContent = s.src === 'hl'
       ? `하이퍼리퀴드 ${TA.hlCoin(s.symbol)} 무기한 선물 · 24시간 거래(주말 포함) · ${n.toLocaleString()}봉 (${fdate(s.t[0])}부터) · 15초마다 갱신`
@@ -325,7 +325,7 @@
       if (s.t.length < 60) throw new Error(`${S.sym} ${TF_LABEL[S.tf]} 데이터가 부족합니다 (${s.t.length}봉)`);
             S.series = s; S.an = { ew: TA.elliott(s, TA.ewMult[S.tf]), ict: TA.ict(s), wy: TA.wyckoff(s), div: TA.divergence(s) };
       const keep = S.key === key; S.key = key;
-      drawChart(keep); explain(); runPlan();
+      drawChart(keep); explain();
       setStatus('ok');
     } catch (e) { if (id === S.load) setStatus('err', e.message); }
   }
@@ -403,120 +403,6 @@
     const [h1, h4, d1] = await Promise.all([TA.loadHL(sym, '1h'), TA.loadHL(sym, '4h'), TA.loadHL(sym, '1d')]);
     return TA.buildContext(h1, h4, d1);
   }
-
-  // ---------- 예상 투자 결과 ----------
-  // 방향: 1 = 롱, -1 = 숏, 0 = 아직 고르지 않음
-  const PL = { side: ({ '1': 1, '-1': -1 })[store.get('pSide', '1')] || 0, key: null };
-  ['pTp', 'pSl', 'pHold', 'pLev'].forEach(id => { const v = store.get(id, null); if (v != null) $('#' + id).value = v; });
-  if (!$('#pHold').value) $('#pHold').value = '24';
-  function syncDir() { $$('#pDir button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === PL.side))); }
-  const roundPx = v => +(+v).toFixed(Math.min(8, dec(v) + 1));
-  // 필수 입력(방향·진입가·목표)이 비어 있으면 계산하지 않고 무엇이 빠졌는지 돌려줍니다.
-  function readPlan() {
-    const entry = +$('#pEntry').value, tp = +$('#pTp').value, missing = [];
-    if (!PL.side) missing.push('방향(롱/숏)');
-    if (!(entry > 0)) missing.push('진입가');
-    if (!(tp > 0)) missing.push('목표 수익');
-    if (missing.length) return { missing };
-    return { side: PL.side, entry, tp, sl: Math.max(0, +$('#pSl').value || 0),
-      holdHours: +$('#pHold').value || 24, amt: Math.max(0, +$('#pAmt').value || 0), lev: Math.min(50, Math.max(1, +$('#pLev').value || 1)) };
-  }
-  function renderPlanEmpty(missing) {
-    const out = $('#planOut'); out.textContent = '';
-    out.append(el('div', { class: 'pb' }, el('p', { class: 'note', text: `${missing.join(', ')}을(를) 입력하면 계산합니다. 진입가는 [현재가] 버튼으로 바로 채울 수 있습니다.` })));
-  }
-  let planSeq = 0;
-  async function runPlan() {
-    if (!S.series) return;
-    const s = S.series, an = S.an, id = ++planSeq, n = s.c.length, cur = s.c[n - 1];
-    // 종목이 바뀌면 이전 종목의 진입가는 의미가 없으므로, 값이 있었을 때만 새 종목의 현재가로 바꿉니다.
-    if (PL.key !== s.symbol) { if (PL.key !== null && $('#pEntry').value) $('#pEntry').value = roundPx(cur); PL.key = s.symbol; }
-    $('#planCtx').textContent = `${TA.dispFull(s.symbol)} · ${TF_LABEL[s.interval]} 차트 · ${s.src === 'hl' ? '하이퍼리퀴드' : '미국 정규장'} 데이터 ${fdate(s.t[0])}~${fdate(s.t[n - 1])} 기준`;
-    const plan = readPlan();
-    if (plan.missing) { S.plan = null; drawPlanLines(); renderPlanEmpty(plan.missing); return; }
-    let ctx = null;
-    try { ctx = await contextFor(s.symbol); } catch (e) {}
-    if (id !== planSeq) return;
-    const r = TA.planEval(s, ctx, plan);
-    const ctxNow = ctx ? ctx(s.t[n - 1] + 1) : null;
-    const factors = TA.planFactors(s, an, ctxNow, plan, r);
-    S.plan = { plan, r };
-    renderPlan(plan, r, factors);
-    drawPlanLines();
-  }
-
-  let planLines = [];
-  TA.ui.planLineCount = () => planLines.length; // 확인용: 차트에 그려진 진입·목표·손절 선 수
-  function drawPlanLines() {
-    planLines.forEach(pl => candle.removePriceLine(pl)); planLines = [];
-    if (!show.tr || !S.plan || !S.series) return;
-    const { plan, r } = S.plan, L = plan.side > 0 ? '롱' : '숏';
-    const add = (price, title, color, style, w) => planLines.push(candle.createPriceLine({ price, title, color, lineWidth: w || 1, lineStyle: style, axisLabelVisible: true }));
-    add(plan.entry, `${L} 진입`, cv('--accent'), LW.LineStyle.Solid, 2);
-    add(r.tpPx, `목표 ${plan.side > 0 ? '+' : '-'}${plan.tp}%`, plan.side > 0 ? cv('--up') : cv('--down'), LW.LineStyle.Dashed, 2);
-    if (r.slPx != null) add(r.slPx, `손절 ${plan.sl}%`, cv('--muted'), LW.LineStyle.Dashed);
-    if (r.liqRisk) add(plan.entry * (1 - plan.side * r.liqRisk.move), `청산 약 ${plan.lev}배`, cv('--down'), LW.LineStyle.Dotted);
-  }
-
-  function renderPlan(plan, r, factors) {
-    const out = $('#planOut'); out.textContent = '';
-    const st = r.st, L = plan.side > 0 ? '롱' : '숏';
-    if (!st.samples) { out.append(el('div', { class: 'pb' }, el('p', { class: 'note', text: '비교할 과거 데이터가 부족합니다. 더 긴 봉 주기(1시간·4시간)를 골라 보세요.' }))); return; }
-    const p = st.winRate * 100;
-    const level = !st.filled ? ['flat', '판단 불가'] : p >= 70 ? ['good', '높음'] : p >= 50 ? ['warn', '보통'] : ['bad', '낮음'];
-    const toneCls = level[0] === 'good' ? 'up' : level[0] === 'bad' ? 'down' : level[0] === 'warn' ? 'warn' : '';
-    const w = k => st.filled ? (st[k] / st.filled * 100) : 0;
-    out.append(el('div', { class: 'headline' },
-      el('div', null, el('div', { class: 'muted', style: 'font-size:12px', text: `${L} ${plan.tp}% 목표 도달 가능성` }), el('div', { class: 'prob ' + toneCls, text: st.filled ? p.toFixed(0) + '%' : '—' })),
-      chip(level[0], `가능성 ${level[1]}`),
-      el('div', { class: 'planbar', title: `목표 도달 ${st.win} · 손절 ${st.sl} · 기간 내 미도달 ${st.timeout}` },
-        el('i', { style: `width:${w('win')}%;background:var(--up)` }), el('i', { style: `width:${w('sl')}%;background:var(--down)` }), el('i', { style: `width:${w('timeout')}%;background:var(--muted);opacity:.45` })),
-      el('div', { class: 'sub', text: `과거 비슷한 상황 ${st.filled}번 중 ${st.win}번 목표 도달${plan.sl ? `, ${st.sl}번은 손절가에 먼저 닿음` : ''}, ${st.timeout}번은 ${fdur(r.holdHours)} 안에 닿지 못함. 비교 기준: ${r.tier}. 조건 없이 아무 때나 같은 계획으로 들어갔다면 ${(r.bs.winRate * 100).toFixed(0)}%.` })));
-    if (st.filled && st.filled < 12) out.append(el('div', { class: 'insight' }, el('div', { class: 'warn', text: `비슷한 상황이 ${st.filled}번뿐이라 확률의 신뢰도가 낮습니다. 봉 주기를 바꾸거나 보유 기간을 늘려 보세요.` })));
-    if (Math.abs(r.rel) > 0.0005) {
-      const below = r.rel < 0;
-      out.append(el('div', { class: 'insight' }, el('div', null, `진입가 ${fp(plan.entry)}는 현재가보다 ${fpct(r.rel * 100)} ${below ? '낮은 지정가' : '높은 돌파 진입'}입니다. 과거 비슷한 상황에서 ${fdur(r.holdHours)} 안에 이 가격에 체결된 비율은 `, el('b', { text: (st.fillRate * 100).toFixed(0) + '%' }), '였고, 위 확률은 체결된 경우만 센 값입니다.')));
-    }
-
-    const tile = (k, v, sub, cls) => el('div', { class: 'tile' }, el('div', { class: 'k', text: k }), el('div', { class: 'v ' + (cls || ''), text: v }), el('div', { class: 's', text: sub }));
-    const lev = plan.lev, amt = plan.amt;
-    const money = v => (v >= 0 ? '+' : '-') + '$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) < 100 ? 2 : 0 });
-    const tiles = [
-      tile('진입가', fp(plan.entry), `현재가 ${fp(r.cur)} 대비 ${fpct(r.rel * 100)}`),
-      tile('목표가', fp(r.tpPx), `${plan.side > 0 ? '+' : '-'}${plan.tp}%${lev > 1 ? ` · 레버리지 반영 ${fpct(plan.tp * lev, 1)}` : ''}`, plan.side > 0 ? 'up' : 'down'),
-      tile('손절가', r.slPx != null ? fp(r.slPx) : '설정 안 함', r.slPx != null ? `-${plan.sl}%${lev > 1 ? ` · 레버리지 반영 ${fpct(-plan.sl * lev, 1)}` : ''}` : '손절 없이 기간 끝까지 보유한다고 가정'),
-      tile('목표까지 걸린 시간', st.medHours != null ? fdur(st.medHours) : '—', '목표에 닿은 경우의 중앙값'),
-      tile('그동안 반대로 밀린 폭', st.maeMed != null ? fpct(st.maeMed * 100, 1) : '—', st.maeWorst10 != null ? `나쁜 10%는 ${fpct(st.maeWorst10 * 100, 1)} 이상` : '', 'down')
-    ];
-    if (amt > 0) {
-      const gain = amt * lev * plan.tp / 100, evAmt = r.ev != null ? amt * lev * r.ev : null;
-      tiles.push(tile('예상 손익', money(gain), `목표 도달 시 · 과거 비율대로라면 1회 평균 ${evAmt != null ? money(evAmt) : '—'}`, 'up'));
-    } else if (r.ev != null) tiles.push(tile('1회 평균 결과', fpct(r.ev * 100 * lev, 2), `과거 비슷한 상황의 평균 (레버리지 ${lev}배 반영) · 투자금을 넣으면 금액으로 보여줍니다`, r.ev >= 0 ? 'up' : 'down'));
-    if (r.liqRisk) tiles.push(tile(`${lev}배 청산 위험`, (r.liqRisk.rate * 100).toFixed(0) + '%', `약 ${fpct(-r.liqRisk.move * 100, 1)} 역행 시 청산 · 과거 비슷한 상황에서 그만큼 밀린 비율`, r.liqRisk.rate > 0.1 ? 'down' : ''));
-    out.append(el('div', { class: 'tiles' }, tiles));
-
-    const good = factors.filter(f => f[0] === 'good'), rest = factors.filter(f => f[0] !== 'good');
-    out.append(el('div', { class: 'cols' },
-      el('div', null, el('h3', { text: `${L}에 유리한 점 (${good.length})` }), good.length ? el('ul', { class: 'vlist' }, good.map(([t, x]) => el('li', { class: t, text: x }))) : el('p', { class: 'note', text: '뚜렷하게 유리한 요인이 없습니다.' })),
-      el('div', null, el('h3', { text: `불리하거나 주의할 점 (${rest.length})` }), rest.length ? el('ul', { class: 'vlist' }, rest.map(([t, x]) => el('li', { class: t, text: x }))) : el('p', { class: 'note', text: '뚜렷하게 불리한 요인이 없습니다.' }))));
-    out.append(el('div', { class: 'pb' }, el('p', { class: 'note', text: `계산 방법: 이 차트의 과거 봉 중 지금과 RSI·방향성이 비슷했던 시점마다 같은 비율의 진입가·목표·손절로 들어갔다고 가정하고, ${fdur(r.holdHours)} 안에 무엇이 먼저 닿았는지 셌습니다. 한 봉 안에서 목표와 손절이 둘 다 닿으면 손절로 셉니다. 수수료·펀딩비·슬리피지는 빠져 있고, 과거 확률이 미래를 보장하지 않습니다. 투자 조언이 아닙니다.` })));
-  }
-
-  $('#pDir').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; PL.side = +b.dataset.v; store.set('pSide', PL.side); syncDir(); runPlan(); });
-  $('#pNow').addEventListener('click', () => { if (S.series) { $('#pEntry').value = roundPx(S.series.c[S.series.c.length - 1]); runPlan(); } });
-  let planTimer = null;
-  $('#planForm').addEventListener('input', () => { ['pTp', 'pSl', 'pHold', 'pLev'].forEach(id => store.set(id, $('#' + id).value)); clearTimeout(planTimer); planTimer = setTimeout(runPlan, 350); });
-  $('#planForm').addEventListener('submit', e => { e.preventDefault(); runPlan(); });
-  // 초기화: 방향 선택과 모든 입력값을 지우고, 결과와 차트의 진입·목표·손절 선도 없앱니다.
-  $('#pReset').addEventListener('click', () => {
-    clearTimeout(planTimer); planSeq++;
-    ['pEntry', 'pTp', 'pSl', 'pAmt', 'pLev'].forEach(id => { $('#' + id).value = ''; store.set(id, ''); });
-    $('#pHold').value = '24'; store.set('pHold', '24');
-    PL.side = 0; store.set('pSide', '0'); syncDir();
-    S.plan = null; drawPlanLines();
-    renderPlanEmpty(['방향(롱/숏)', '진입가', '목표 수익']);
-  });
-  syncDir();
 
   // ---------- 상단 시세 띠 ----------
   // [표시 이름, 하이퍼리퀴드 종목, 누르면 열 차트 종목]
@@ -621,10 +507,6 @@
     const dip = TA.dipView(ict, ew, wy, div);
     L.push('', `[종합 판독] ${dip.verdict[1]} (점수 ${dip.score})`);
     if (S.mtfText) L.push('', '[방향성 점검표]', S.mtfText);
-    if (S.plan) {
-      const { plan, r: pr } = S.plan;
-      L.push('', `[예상 투자 결과 입력값] ${plan.side > 0 ? '롱' : '숏'} 진입 ${fp(plan.entry)}, 목표 ${plan.tp}% (${fp(pr.tpPx)}), 손절 ${plan.sl ? plan.sl + '%' : '없음'}, 보유 ${fdur(pr.holdHours)}, 레버리지 ${plan.lev}배 → 과거 비슷한 상황 ${pr.st.filled}번 중 목표 도달 ${(pr.st.winRate * 100).toFixed(0)}%`);
-    }
     const fc = TA.ui.flowContext && TA.ui.flowContext();
     if (fc) L.push('', fc);
     return { sym: s.symbol, tf: s.interval, label: `${TA.dispFull(s.symbol)} ${TF_LABEL[s.interval]}`, text: L.join('\n') };
@@ -642,7 +524,7 @@
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { themeLabel(); applyTheme(); window.dispatchEvent(new Event('themechange')); });
 
   // 탭
-  const TABS = ['trade', 'flow', 'whale', 'liq', 'lines', 'report', 'test'];
+  const TABS = ['trade', 'flow', 'whale', 'liq', 'lines', 'report'];
   TA.ui.activeTab = () => { const h = location.hash.slice(1); return TABS.includes(h) ? h : 'trade'; };
   function route() {
     const cur = TA.ui.activeTab();
