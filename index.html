@@ -35,6 +35,7 @@
   <section class="cards" id="cards" aria-label="실시간 신호"></section>
 
   <div class="work">
+    <div class="work-main">
     <section class="panel" aria-label="차트">
       <div class="controls">
         <div class="seg" id="symSeg" role="group" aria-label="종목">
@@ -70,16 +71,17 @@
       <div class="src-note" id="srcNote"></div>
     </section>
 
+    <section class="panel" id="mtfPanel">
+      <div class="ph"><h2>방향성 점검표</h2><small>짧은 봉과 큰 봉의 흐름이 같은 방향인지 봉 주기별로 확인</small></div>
+      <div class="tblwrap"><table id="mtf"><thead><tr><th>종목 · 봉</th><th>추세 (EMA)</th><th>ICT 구조</th><th>엘리엇 (가장 유력한 카운트)</th><th>와이코프</th><th>다이버전스</th><th class="r">RSI 14</th></tr></thead><tbody></tbody></table></div>
+      <div class="pb"><p class="note" id="mtfNote"></p></div>
+    </section>
+    </div>
+
     <aside class="panel explain" aria-label="차트 해설" id="explain">
       <div class="verdict"><div class="head"><span class="muted">불러오는 중…</span></div></div>
     </aside>
   </div>
-
-  <section class="panel">
-    <div class="ph"><h2>방향성 점검표</h2><small>짧은 봉과 큰 봉의 흐름이 같은 방향인지 봉 주기별로 확인</small></div>
-    <div class="tblwrap"><table id="mtf"><thead><tr><th>종목 · 봉</th><th>추세 (EMA)</th><th>ICT 구조</th><th>엘리엇 (가장 유력한 카운트)</th><th>와이코프</th><th>다이버전스</th><th class="r">RSI 14</th></tr></thead><tbody></tbody></table></div>
-    <div class="pb"><p class="note" id="mtfNote"></p></div>
-  </section>
 
   <footer>
     <span>데이터: 하이퍼리퀴드 공개 API (실시간) · 야후 파이낸스 정규장 데이터 (GitHub Actions가 장중 30분마다 갱신). 차트 시간은 이 기기의 현지 시간입니다.</span>

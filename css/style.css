@@ -124,7 +124,11 @@ b { font-weight: 700; }
 
 /* ---------- 차트 영역 ---------- */
 .work { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
-@media (max-width: 1080px) { .work { grid-template-columns: minmax(0, 1fr); } }
+/* 왼쪽 칸: 차트 아래에 방향성 점검표를 붙여 오른쪽 해설 옆 빈 공간을 채움 */
+.work-main { display: grid; gap: 14px; min-width: 0; }
+#mtfPanel th, #mtfPanel td { padding: 7px 8px; white-space: normal; }
+#mtfPanel .chip { white-space: normal; }
+@media (max-width: 1080px) { .work { grid-template-columns: minmax(0, 1fr); } .work-main { display: contents; } #mtfPanel { order: 1; } }
 .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); align-items: center; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; background: var(--panel); }
 .seg button { border: 0; background: none; padding: 5px 10px; cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--muted); }
