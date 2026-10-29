@@ -9,6 +9,9 @@
   const COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE'], HZ = [4, 24, 72], H = 3600;
   const MIN_EFF = 20;          // 독립 표본이 이보다 적으면 "표본 부족"
   const GOOD = 0.55, BAD = 0.45; // 검증 기준: 앞 기간·뒤 기간 모두 55% 이상(또는 45% 이하)
+  const MIN_SIDE = 5;          // 신호 +일 때·−일 때 각각 독립 표본이 이보다 적으면 "한쪽만 나옴"
+  const EDGE = 0.05;           // "다수 방향으로 찍기" 기준선보다 이만큼 나아야 함
+  const MIN_DAYS = 7, MIN_REGIME = 2; // 관측 7일 이상 + 오른 칸·내린 칸 각각 2개 이상
   const O = { local: false, days: {}, loaded: false, busy: false, stats: null, statsAt: 0 };
   const pad = v => String(v).padStart(2, '0');
   const dayOf = t => { const d = new Date(t * 1000); return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`; };
@@ -84,15 +87,28 @@
     const now = Date.now() / 1000, out = {};
     all.forEach(r => { r.mv = {}; HZ.forEach(h => { const m = close[r.c], v = m && now >= r.t + h * H ? m.get(r.t + h * H - H) : null; if (v != null && r.p) r.mv[h] = Math.sign(v - r.p); }); });
     const mid = all.map(r => r.t).sort((a, b) => a - b)[Math.floor(all.length / 2)];
-    // 독립 표본: 같은 코인의 관측은 h시간 안에서 결과가 거의 겹치므로, 코인별 h시간 칸 수로 셉니다
-    const eff = (g, h) => new Set(g.map(r => r.c + ':' + Math.floor(r.t / (h * H)))).size;
+    // 독립 표본: h시간 안의 관측은 결과가 거의 겹치고, 코인끼리도 같이 움직이므로 코인과 상관없이 h시간 칸 수로 셉니다
+    const slotOf = (r, h) => Math.floor(r.t / (h * H));
+    const eff = (g, h) => new Set(g.map(r => slotOf(r, h))).size;
     const rate = (g, key, h) => { const x = g.filter(r => r.s[key] && r.mv[h]); return { n: x.length, hit: x.filter(r => r.s[key] === r.mv[h]).length, eff: eff(x, h) }; };
+    // 시장 국면: h시간 칸마다 관측 다수가 오른 칸·내린 칸 수, 결과가 나온 관측 기간(일)
+    const regime = HZ.map(h => {
+      const g = all.filter(r => r.mv[h]), sum = new Map();
+      g.forEach(r => sum.set(slotOf(r, h), (sum.get(slotOf(r, h)) || 0) + r.mv[h]));
+      const v = [...sum.values()], ts = g.map(r => r.t);
+      return { up: v.filter(x => x > 0).length, down: v.filter(x => x < 0).length, days: g.length ? (Math.max(...ts) - Math.min(...ts)) / 86400 : 0 };
+    });
     const keys = [...T.TFS.flatMap(tf => T.SIG_CHART.map(([k]) => tf + '.' + k)), ...T.SIG_OTHER.map(([k]) => k)];
     keys.forEach(key => {
       out[key] = {};
-      HZ.forEach(h => {
+      HZ.forEach((h, i) => {
         const a = rate(all, key, h), f = rate(all.filter(r => r.t < mid), key, h), b = rate(all.filter(r => r.t >= mid), key, h);
-        out[key][h] = { ...a, rate: a.n ? a.hit / a.n : null, front: f.n ? f.hit / f.n : null, back: b.n ? b.hit / b.n : null, verdict: verdict(a, f, b) };
+        const p = rate(all.filter(r => r.s[key] > 0), key, h), m = rate(all.filter(r => r.s[key] < 0), key, h);
+        // 기준선: 같은 관측에서 신호와 상관없이 "다수 방향으로 찍기"만 해도 맞는 비율
+        const x = all.filter(r => r.s[key] && r.mv[h]), ups = x.filter(r => r.mv[h] > 0).length, base = x.length ? Math.max(ups, x.length - ups) / x.length : null;
+        const o = { ...a, rate: a.n ? a.hit / a.n : null, front: f.n ? f.hit / f.n : null, back: b.n ? b.hit / b.n : null, plus: p.n ? p.hit / p.n : null, minus: m.n ? m.hit / m.n : null, plusEff: p.eff, minusEff: m.eff, base };
+        o.verdict = verdict(a, f, b, p, m, base, regime[i]);
+        out[key][h] = o;
       });
     });
     // 신호 합의: 관측마다 (상승 신호 수 − 하락 신호 수)를 구간으로 나눠 실제로 오른 비율
@@ -101,16 +117,18 @@
       const g = all.filter(r => f(Object.values(r.s).reduce((t, v) => t + v, 0)));
       return { name, ...Object.fromEntries(HZ.map(h => { const x = g.filter(r => r.mv[h]); return [h, { n: x.length, eff: eff(x, h), up: x.length ? x.filter(r => r.mv[h] > 0).length / x.length : null }]; })) };
     });
-    return { n: all.length, first: from, last: Math.max(...all.map(r => r.t)), coins: new Set(all.map(r => r.c)).size, mid, sig: out, cons };
+    return { n: all.length, first: from, last: Math.max(...all.map(r => r.t)), coins: new Set(all.map(r => r.c)).size, mid, sig: out, cons, regime };
   }
-  function verdict(a, f, b) {
+  function verdict(a, f, b, p, m, base, rg) {
     if (a.eff < MIN_EFF || !f.n || !b.n) return 'few';
-    const fr = f.hit / f.n, br = b.hit / b.n, r = a.hit / a.n;
-    if (fr >= GOOD && br >= GOOD) return 'up';
-    if (fr <= BAD && br <= BAD) return 'rev';
+    if (rg.days < MIN_DAYS || rg.up < MIN_REGIME || rg.down < MIN_REGIME) return 'wait';
+    if (p.eff < MIN_SIDE || m.eff < MIN_SIDE) return 'one';
+    const fr = f.hit / f.n, br = b.hit / b.n, r = a.hit / a.n, pr = p.hit / p.n, mr = m.hit / m.n;
+    if (fr >= GOOD && br >= GOOD && pr >= GOOD && mr >= GOOD && r >= base + EDGE) return 'up';
+    if (fr <= BAD && br <= BAD && pr <= BAD && mr <= BAD && 1 - r >= base + EDGE) return 'rev';
     return r >= GOOD || r <= BAD ? 'cand' : 'flat';
   }
-  const VERDICT = { few: ['muted', '표본 부족'], up: ['up', '검증됨 · 맞음'], rev: ['down', '검증됨 · 반대로 맞음'], cand: ['', '후보 · 확인 중'], flat: ['muted', '반반'] };
+  const VERDICT = { few: ['muted', '표본 부족'], wait: ['muted', '기간 부족'], one: ['muted', '한쪽만 나옴'], up: ['up', '검증됨 · 맞음'], rev: ['down', '검증됨 · 반대로 맞음'], cand: ['', '후보 · 확인 중'], flat: ['muted', '반반'] };
   async function stats() {
     if (O.stats && Date.now() - O.statsAt < 30 * 60e3) return O.stats;
     if (!O.loaded) await load();
@@ -127,7 +145,7 @@
   U.obsBrief = async function (coin, now) {
     const st = await stats().catch(() => null);
     if (!st || !st.n) return '아직 관측 기록 없음';
-    const L = [`관측 ${st.n}건 (${fdt(st.first)}~${fdt(st.last)}, 코인 ${st.coins}개) · 검증 = 관측 기간을 앞·뒤로 나눠 두 기간 모두 ${Math.round(GOOD * 100)}% 이상(또는 ${Math.round(BAD * 100)}% 이하), 독립 표본 ${MIN_EFF}개 이상`];
+    const L = [`관측 ${st.n}건 (${fdt(st.first)}~${fdt(st.last)}, 코인 ${st.coins}개) · 검증 = 관측 기간을 앞·뒤로 나눠 두 기간 모두 ${Math.round(GOOD * 100)}% 이상(또는 ${Math.round(BAD * 100)}% 이하), 신호 +·− 양쪽 모두 같은 기준, "다수 방향 찍기" 기준선보다 ${Math.round(EDGE * 100)}%p 이상, 독립 표본(시간 칸) ${MIN_EFF}개 이상, 관측 ${MIN_DAYS}일 이상에 오른·내린 칸 각 ${MIN_REGIME}개 이상`];
     const ver = [];
     Object.entries(st.sig).forEach(([key, hs]) => HZ.forEach(h => { const x = hs[h]; if (x.verdict === 'up' || x.verdict === 'rev') ver.push({ key, h, x }); }));
     if (!ver.length) L.push('검증된 신호: 아직 없음 (표본이 쌓이는 중이라 신호별 확률은 판단 근거로 쓰지 않는다)');
@@ -154,9 +172,11 @@
       el('small', { text: `내 컴퓨터 대시보드가 열려 있으면 1시간마다 ${COINS.join('·')}의 신호를 기록 · Claude 사용량 없음 · ${HZ.join('·')}시간 뒤 가격 방향과 비교` })));
     if (!st || !st.n) { box.append(el('p', { class: 'note pb', text: O.local ? '첫 관측을 기다리는 중입니다 (매시 정각 2분 뒤).' : '관측 기록이 아직 없습니다. 내 컴퓨터 대시보드를 열어 두면 쌓입니다.' })); return; }
     const pb = el('div', { class: 'pb' });
-    pb.append(el('p', { class: 'note', text: `관측 ${st.n}건 · ${fdt(st.first)} ~ ${fdt(st.last)} · 코인 ${st.coins}개 · 검증: 기간을 ${fdt(st.mid)} 기준 앞·뒤로 나눠 두 기간 모두 ${Math.round(GOOD * 100)}% 이상이면 "맞음", 모두 ${Math.round(BAD * 100)}% 이하면 "반대로 맞음" (독립 표본 ${MIN_EFF}개 이상일 때만). 칸 = 신호 방향대로 간 비율 (독립 표본 수). 검증된 신호만 리포트 지시문에 확률로 들어갑니다.` }));
-    const cell = x => { const [cls] = VERDICT[x.verdict]; return el('td', { class: 'r m ' + cls, title: x.front != null ? `앞 기간 ${Math.round(x.front * 100)}% · 뒤 기간 ${x.back != null ? Math.round(x.back * 100) + '%' : '-'}` : '', text: x.n ? `${Math.round(x.rate * 100)}% (${x.eff})` : '—' }); };
-    const best = hs => { const o = ['up', 'rev', 'cand', 'flat', 'few']; return HZ.map(h => hs[h].verdict).sort((a, b) => o.indexOf(a) - o.indexOf(b))[0]; };
+    const rgTxt = HZ.map((h, i) => `${h}시간 ${st.regime[i].days.toFixed(1)}일·오른 칸 ${st.regime[i].up}·내린 칸 ${st.regime[i].down}`).join(' / ');
+    pb.append(el('p', { class: 'note', text: `관측 ${st.n}건 · ${fdt(st.first)} ~ ${fdt(st.last)} · 코인 ${st.coins}개 · 검증: 기간을 ${fdt(st.mid)} 기준 앞·뒤로 나눠 두 기간 모두 ${Math.round(GOOD * 100)}% 이상이면 "맞음", 모두 ${Math.round(BAD * 100)}% 이하면 "반대로 맞음". 추가 조건: 신호가 +일 때·−일 때 따로 채점해 양쪽 모두 같은 결과(각 독립 ${MIN_SIDE}개 이상, 아니면 "한쪽만 나옴"), "다수 방향 찍기" 기준선보다 ${Math.round(EDGE * 100)}%p 이상, 독립 표본 ${MIN_EFF}개 이상, 관측 ${MIN_DAYS}일 이상에 오른 칸·내린 칸 각 ${MIN_REGIME}개 이상(아니면 "기간 부족"). 독립 표본 = 코인과 상관없이 4·24·72시간 칸 수 (코인들이 같이 움직이므로). 칸 = 신호 방향대로 간 비율 · 기준선 (독립 표본 수), 칸에 마우스를 올리면 앞·뒤 기간과 +·− 결과. 지금 국면: ${rgTxt}. 검증된 신호만 리포트 지시문에 확률로 들어갑니다.` }));
+    const pc = v => v == null ? '-' : Math.round(v * 100) + '%';
+    const cell = x => { const [cls] = VERDICT[x.verdict]; return el('td', { class: 'r m ' + cls, title: x.n ? `앞 기간 ${pc(x.front)} · 뒤 기간 ${pc(x.back)} · 신호 +일 때 ${pc(x.plus)} (독립 ${x.plusEff}) · −일 때 ${pc(x.minus)} (독립 ${x.minusEff}) · 기준선 ${pc(x.base)}` : '', text: x.n ? `${pc(x.rate)} · 기준 ${pc(x.base)} (${x.eff})` : '—' }); };
+    const best = hs => { const o = ['up', 'rev', 'cand', 'flat', 'one', 'wait', 'few']; return HZ.map(h => hs[h].verdict).sort((a, b) => o.indexOf(a) - o.indexOf(b))[0]; };
     const table = keys => el('div', { class: 'tblwrap', style: 'margin-top:8px' }, el('table', null,
       el('thead', null, el('tr', null, ['신호', ...HZ.map(h => h + '시간 뒤'), '판정'].map((x, i) => el('th', { class: i ? 'r' : '', text: x })))),
       el('tbody', null, keys.map(key => { const hs = st.sig[key], [cls, txt] = VERDICT[best(hs)]; return el('tr', null, el('td', { text: nameOf(key) }), HZ.map(h => cell(hs[h])), el('td', { class: 'r ' + cls, text: txt })); }))));
