@@ -15,16 +15,22 @@
   const S = {
     coin: store.get('lmCoin', 'BTC'), view: store.get('lmView', 'map'), tf: store.get('lmTf', '1h'), days: +store.get('lmDays', 14), split: store.get('lmSplit', 'taker'),
     ex: new Set(JSON.parse(store.get('lmEx', '["binance","bybit","okx","bitget","hl"]'))), lev: new Set(JSON.parse(store.get('lmLev', '[10,25,50,100]'))),
-    data: {}, model: null, at: null, playing: null, started: false
+    data: {}, seen: {}, model: null, at: null, playing: null, started: false
   };
   const save = () => { store.set('lmCoin', S.coin); store.set('lmView', S.view); store.set('lmTf', S.tf); store.set('lmDays', S.days); store.set('lmSplit', S.split); store.set('lmEx', JSON.stringify([...S.ex])); store.set('lmLev', JSON.stringify([...S.lev])); };
 
   // ---------- 자료 ----------
+  // 수집기는 코인 파일을 다 쓴 뒤 index.json의 updated를 바꿉니다. 받아 둔 자료가 그보다 옛것이면 다시 받습니다.
+  async function indexTime() {
+    try { const r = await fetch('liqmap/index.json?v=' + Date.now(), { cache: 'no-store' }); return (await r.json()).updated || 0; } catch (e) { return 0; }
+  }
   async function loadData(coin, force) {
-    if (S.data[coin] && !force) return S.data[coin];
+    const idx = await indexTime();
+    if (S.data[coin] && !force && !(idx > (S.seen[coin] || 0))) return S.data[coin];
     const r = await fetch(`liqmap/${coin}.json?v=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error('청산맵 자료가 아직 없습니다 (scripts/liqmap-collect.mjs가 모읍니다)');
-    return (S.data[coin] = await r.json());
+    S.data[coin] = await r.json(); S.seen[coin] = idx;
+    return S.data[coin];
   }
 
   // ---------- 추정 모델 ----------
@@ -83,7 +89,7 @@
         curStat = { add: 0, close: 0, liq: 0 };
       }
     }
-    return { nb, step, b0, priceOf, binOf, snaps, cols, exs, price: bars[N - 1][4], updated: d.updated, first: d.first };
+    return { nb, step, b0, priceOf, binOf, snaps, cols, exs, price: bars[N - 1][4], last: bars[N - 1][0], updated: d.updated, first: d.first };
   }
   // 가격대별: 거래소별 롱/숏 배열이 필요해서 따로 계산 (같은 규칙)
   function exState(d, upto) {
@@ -110,6 +116,66 @@
     return { L, S: Sh, price: d.bars[upto][4], t: d.bars[upto][0] };
   }
 
+  // ---------- 실시간 (바이낸스 선물): 15분봉 가격과 강제청산 ----------
+  // 청산 물량 지도는 15분 수집 자료 그대로 두고, 캔들·현재가·강제청산 점만 실시간으로 움직입니다.
+  const LIVE = { coin: null, bars: new Map(), ws: null, liq: [], liqWs: null, since: null, timer: null };
+  const LIQ_COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE'];
+  async function liveStart(coin) {
+    if (LIVE.coin === coin && LIVE.ws) return;
+    if (LIVE.ws) { LIVE.ws.onclose = null; LIVE.ws.close(); LIVE.ws = null; }
+    LIVE.coin = coin; LIVE.bars = new Map();
+    const put = k => LIVE.bars.set(+k[0], [+k[0], +k[1], +k[2], +k[3], +k[4]]);
+    try { (await (await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${coin}USDT&interval=15m&limit=8`)).json()).forEach(put); } catch (e) {}
+    if (LIVE.coin !== coin) return;
+    try {
+      const ws = new WebSocket(`wss://fstream.binance.com/market/ws/${coin.toLowerCase()}usdt@kline_15m`); LIVE.ws = ws;
+      ws.onmessage = e => { try { const k = JSON.parse(e.data).k; put([k.t, k.o, k.h, k.l, k.c]); liveDraw(); } catch (err) {} };
+      ws.onclose = () => { if (LIVE.ws !== ws) return; LIVE.ws = null; setTimeout(() => { if (LIVE.coin === coin && !LIVE.ws) liveStart(coin); }, 10e3); };
+    } catch (e) {}
+    liveDraw();
+  }
+  function liqStart() {
+    if (LIVE.liqWs) return;
+    try {
+      const ws = new WebSocket('wss://fstream.binance.com/market/ws/!forceOrder@arr'); LIVE.liqWs = ws;
+      ws.onopen = () => { if (LIVE.since == null) LIVE.since = Date.now(); };
+      ws.onmessage = e => {
+        try {
+          const o = JSON.parse(e.data).o, c = o.s.replace(/USDT$/, ''); if (!LIQ_COINS.includes(c)) return;
+          LIVE.liq.push({ t: o.T, c, long: o.S === 'SELL', p: +o.ap, usd: +o.z * +o.ap }); // SELL = 롱 포지션이 강제로 팔림
+          const cut = Date.now() - 864e5; while (LIVE.liq.length && LIVE.liq[0].t < cut) LIVE.liq.shift();
+          if (c === S.coin) liveDraw();
+        } catch (err) {}
+      };
+      ws.onclose = () => { LIVE.liqWs = null; setTimeout(liqStart, 30e3); };
+    } catch (e) {}
+  }
+  // 화면이 너무 자주 다시 그려지지 않게 2초에 한 번만
+  function liveDraw() {
+    if (LIVE.timer || U.activeTab() !== 'liq' || document.hidden || !S.model || S.playing) return;
+    LIVE.timer = setTimeout(() => { LIVE.timer = null; if (U.activeTab() === 'liq' && S.model && !S.playing) (S.view === 'map' ? drawMap : drawPrice)(); }, 2000);
+  }
+  // 수집 자료 뒤에 나온 바이낸스 15분봉을 화면 봉에 이어 붙입니다. lo~hi는 그 사이 가격이 지나간 범위 (그 안의 청산가는 이미 청산된 것으로 봄)
+  function liveView(m) {
+    const out = { cols: m.cols, price: m.price, lo: Infinity, hi: -Infinity, on: false };
+    if (LIVE.coin !== S.coin || !m.cols.length) return out;
+    const per = TF[S.tf] * M15, bars = [...LIVE.bars.values()].filter(b => b[0] >= m.last).sort((a, b) => a[0] - b[0]);
+    if (!bars.length) return out;
+    const cols = m.cols.slice(); let cur = { ...cols[cols.length - 1] }; cols[cols.length - 1] = cur;
+    bars.forEach(([t, o, h, l, c]) => {
+      if (t > m.last && t - cur.t >= per) { cur = { t: cur.t + Math.floor((t - cur.t) / per) * per, o, h, l, c, i: cur.i, stat: { add: 0, close: 0, liq: 0 }, live: true }; cols.push(cur); }
+      else { cur.h = Math.max(cur.h, h); cur.l = Math.min(cur.l, l); cur.c = c; }
+      out.lo = Math.min(out.lo, l); out.hi = Math.max(out.hi, h);
+    });
+    return Object.assign(out, { cols, price: bars[bars.length - 1][4], on: true });
+  }
+  const liqOf = (coin, from) => LIVE.liq.filter(x => x.c === coin && x.t >= from);
+  function liqNote(coin) {
+    if (LIVE.since == null) return '실시간 강제청산: 바이낸스 연결 중…';
+    const g = liqOf(coin, LIVE.since), L = g.filter(x => x.long).reduce((t, x) => t + x.usd, 0), Sh = g.filter(x => !x.long).reduce((t, x) => t + x.usd, 0);
+    return `실시간 강제청산 (바이낸스, ${fdt(LIVE.since / 1000).slice(-5)}부터 ${g.length}건): 롱 ${fusd(L)} · 숏 ${fusd(Sh)}`;
+  }
+
   // ---------- 색 ----------
   const STOPS = [[0, [10, 14, 60]], [0.18, [20, 40, 140]], [0.38, [20, 140, 170]], [0.55, [60, 190, 120]], [0.72, [230, 220, 60]], [0.86, [245, 140, 30]], [1, [235, 40, 30]]];
   const colorAt = v => { v = Math.max(0, Math.min(1, v)); let k = 1; while (k < STOPS.length - 1 && STOPS[k][0] < v) k++; const [a, ca] = STOPS[k - 1], [b, cb] = STOPS[k], f = (v - a) / (b - a || 1); return ca.map((x, i) => Math.round(x + (cb[i] - x) * f)); };
@@ -122,24 +188,31 @@
     box.append(cnv);
     const g = cnv.getContext('2d'); g.scale(devicePixelRatio, devicePixelRatio);
     const histW = Math.min(150, Math.round(W * 0.14)), axisW = 64, padB = 22, mapW = W - histW - axisW, mapH = H - padB;
-    const cols = m.cols; if (!cols.length) return;
+    const lv = liveView(m), cols = lv.cols, price = lv.price; if (!cols.length) return;
+    const snapAt = ci => m.snaps[Math.min(ci, m.snaps.length - 1)]; // 실시간으로 붙인 봉은 마지막 수집 시점의 지도
     let lo = Infinity, hi = -Infinity; cols.forEach(c => { if (c.l < lo) lo = c.l; if (c.h > hi) hi = c.h; });
     const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
     const yOf = p => (hi - p) / (hi - lo) * mapH, pOf = y => hi - y / mapH * (hi - lo);
-    // 색 기준: 보이는 칸들의 98% 값
-    const kLo = m.binOf(lo), kHi = m.binOf(hi), vals = [];
-    for (let x = 0; x < cols.length; x += Math.max(1, Math.floor(cols.length / 200))) for (let k = kLo; k <= kHi; k += 2) { const v = m.snaps[x][k]; if (v > 0) vals.push(v); }
-    vals.sort((a, b) => a - b); const vmax = vals.length ? vals[Math.floor(vals.length * 0.98)] : 1;
-    const img = g.createImageData(Math.max(1, Math.floor(mapW * devicePixelRatio)), Math.max(1, Math.floor(mapH * devicePixelRatio)));
-    const iw = img.width, ih = img.height;
-    for (let px = 0; px < iw; px++) {
-      const ci = Math.min(cols.length - 1, Math.floor(px / iw * cols.length)), snap = m.snaps[ci];
-      for (let py = 0; py < ih; py++) {
-        const p = pOf(py / devicePixelRatio), v = snap[m.binOf(p)], [r, gg, b] = colorAt(Math.sqrt(v / vmax));
-        const o = (py * iw + px) * 4; img.data[o] = r; img.data[o + 1] = gg; img.data[o + 2] = b; img.data[o + 3] = 255;
+    const kLo = m.binOf(lo), kHi = m.binOf(hi);
+    // 지도 색칠은 무거워서, 봉 개수·크기·가격 범위가 같으면 전에 칠한 그림을 다시 씁니다
+    const key = [W, H, devicePixelRatio, cols.length, lo, hi].join('|');
+    if (!S.img || S.img.model !== m || S.img.key !== key) {
+      // 색 기준: 보이는 칸들의 98% 값
+      const vals = [];
+      for (let x = 0; x < m.snaps.length; x += Math.max(1, Math.floor(m.snaps.length / 200))) for (let k = kLo; k <= kHi; k += 2) { const v = m.snaps[x][k]; if (v > 0) vals.push(v); }
+      vals.sort((a, b) => a - b); const vmax = vals.length ? vals[Math.floor(vals.length * 0.98)] : 1;
+      const img = g.createImageData(Math.max(1, Math.floor(mapW * devicePixelRatio)), Math.max(1, Math.floor(mapH * devicePixelRatio)));
+      const iw = img.width, ih = img.height;
+      for (let px = 0; px < iw; px++) {
+        const snap = snapAt(Math.min(cols.length - 1, Math.floor(px / iw * cols.length)));
+        for (let py = 0; py < ih; py++) {
+          const p = pOf(py / devicePixelRatio), v = snap[m.binOf(p)], [r, gg, b] = colorAt(Math.sqrt(v / vmax));
+          const o = (py * iw + px) * 4; img.data[o] = r; img.data[o + 1] = gg; img.data[o + 2] = b; img.data[o + 3] = 255;
+        }
       }
+      S.img = { model: m, key, img };
     }
-    g.putImageData(img, 0, 0); // putImageData는 scale을 무시하므로 장치 픽셀 기준으로 그렸습니다
+    g.putImageData(S.img.img, 0, 0); // putImageData는 scale을 무시하므로 장치 픽셀 기준으로 그렸습니다
     // 봉
     const cw = mapW / cols.length, up = '#3ddc97', dn = '#ff5a6a';
     cols.forEach((c, x) => {
@@ -147,20 +220,29 @@
       g.beginPath(); g.moveTo(cx, yOf(c.h)); g.lineTo(cx, yOf(c.l)); g.stroke();
       if (cw >= 3) { g.fillStyle = g.strokeStyle; const y1 = yOf(Math.max(c.o, c.c)), y2 = yOf(Math.min(c.o, c.c)); g.fillRect(cx - cw * 0.35, y1, cw * 0.7, Math.max(1, y2 - y1)); }
     });
+    // 실시간 강제청산: 점 크기 = 금액, 초록 = 롱이 청산됨, 빨강 = 숏이 청산됨
+    const per = TF[S.tf] * M15, t0 = cols[0].t;
+    liqOf(S.coin, t0).forEach(x => {
+      let ci = cols.length - 1; while (ci > 0 && cols[ci].t > x.t) ci--;
+      const cx = (ci + Math.min(1, (x.t - cols[ci].t) / per)) * cw, cy = yOf(x.p); if (cy < 0 || cy > mapH) return;
+      g.beginPath(); g.arc(Math.min(mapW - 2, cx), cy, Math.min(11, 2.5 + Math.sqrt(x.usd / 2e4)), 0, 7);
+      g.fillStyle = x.long ? 'rgba(43,195,165,.85)' : 'rgba(241,95,105,.85)'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1; g.stroke();
+    });
     // 현재가
-    const yp = yOf(m.price); g.setLineDash([4, 3]); g.strokeStyle = '#ffffff'; g.beginPath(); g.moveTo(0, yp); g.lineTo(mapW + histW, yp); g.stroke(); g.setLineDash([]);
-    // 오른쪽: 지금 남은 물량 (위 = 숏 청산, 아래 = 롱 청산)
-    const now = m.snaps[m.snaps.length - 1]; let hm = 0; for (let k = kLo; k <= kHi; k++) hm = Math.max(hm, now[k]);
+    const yp = yOf(price); g.setLineDash([4, 3]); g.strokeStyle = '#ffffff'; g.beginPath(); g.moveTo(0, yp); g.lineTo(mapW + histW, yp); g.stroke(); g.setLineDash([]);
+    // 오른쪽: 지금 남은 물량 (위 = 숏 청산, 아래 = 롱 청산). 수집 뒤 가격이 지나간 자리는 뺍니다
+    const last = m.snaps[m.snaps.length - 1], now = k => { const p = m.priceOf(k); return p >= lv.lo && p <= lv.hi ? 0 : last[k]; };
+    let hm = 0; for (let k = kLo; k <= kHi; k++) hm = Math.max(hm, now(k));
     g.fillStyle = cv('--panel'); g.fillRect(mapW, 0, histW + axisW, H);
     for (let k = kLo; k <= kHi; k++) {
-      const p = m.priceOf(k), v = now[k]; if (!v) continue;
+      const p = m.priceOf(k), v = now(k); if (!v) continue;
       const y = yOf(p + m.step / 2), hgt = Math.max(1, yOf(p - m.step / 2) - y);
-      g.fillStyle = p > m.price ? '#f15f69' : '#2bc3a5'; g.fillRect(mapW + 4, y, (histW - 8) * v / hm, hgt);
+      g.fillStyle = p > price ? '#f15f69' : '#2bc3a5'; g.fillRect(mapW + 4, y, (histW - 8) * v / hm, hgt);
     }
     // 가격 축
     g.fillStyle = cv('--muted'); g.font = '11px JetBrains Mono, Consolas, monospace'; g.textAlign = 'left';
     const ps = niceStep((hi - lo) / 8); for (let p = Math.ceil(lo / ps) * ps; p < hi; p += ps) g.fillText(fp(p), mapW + histW + 6, yOf(p) + 4);
-    g.fillStyle = '#ffffff'; g.fillRect(mapW + histW + 2, yp - 8, axisW - 4, 16); g.fillStyle = '#000'; g.fillText(fp(m.price), mapW + histW + 6, yp + 4);
+    g.fillStyle = '#ffffff'; g.fillRect(mapW + histW + 2, yp - 8, axisW - 4, 16); g.fillStyle = '#000'; g.fillText(fp(price), mapW + histW + 6, yp + 4);
     // 날짜 축
     g.fillStyle = cv('--muted'); g.textAlign = 'center';
     const every = Math.max(1, Math.round(cols.length / 7)); for (let x = 0; x < cols.length; x += every) g.fillText(fdt(cols[x].t / 1000).slice(0, 5), x * cw, H - 6);
@@ -169,22 +251,32 @@
     cnv.onmousemove = e => {
       const r = cnv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
       if (x > mapW || y > mapH) { tip.hidden = true; return; }
-      const ci = Math.min(cols.length - 1, Math.floor(x / cw)), p = pOf(y), v = m.snaps[ci][m.binOf(p)];
+      const ci = Math.min(cols.length - 1, Math.floor(x / cw)), p = pOf(y), v = snapAt(ci)[m.binOf(p)];
       tip.hidden = false; tip.style.left = Math.min(x + 14, W - 200) + 'px'; tip.style.top = (y + 14) + 'px';
-      tip.textContent = `${fdt(cols[ci].t / 1000)} · ${fp(p)} · ${p > cols[ci].c ? '숏' : '롱'} 청산 대기 ${fusd(v)}`;
+      tip.textContent = `${fdt(cols[ci].t / 1000)} · ${fp(p)} · ${p > cols[ci].c ? '숏' : '롱'} 청산 대기 ${fusd(v)}${cols[ci].live ? ' (지도는 마지막 수집 시점)' : ''}`;
     };
     cnv.onmouseleave = () => { tip.hidden = true; };
     // 위 요약
-    let sumL = 0, sumS = 0; for (let k = kLo; k <= kHi; k++) { if (m.priceOf(k) > m.price) sumS += now[k]; else sumL += now[k]; }
+    let sumL = 0, sumS = 0; for (let k = kLo; k <= kHi; k++) { if (m.priceOf(k) > price) sumS += now(k); else sumL += now(k); }
     $('#lmSum').innerHTML = '';
-    $('#lmSum').append(`${fdt(m.updated / 1000)} 기준 · 화면 안 남은 `, el('b', { class: 'up', text: `롱 청산 ${fusd(sumL)}` }), ' · ', el('b', { class: 'down', text: `숏 청산 ${fusd(sumS)}` }));
+    $('#lmSum').append(`청산 물량 ${fdt(m.updated / 1000)} 기준${lv.on ? ' · 가격 실시간' : ''} · 화면 안 남은 `, el('b', { class: 'up', text: `롱 청산 ${fusd(sumL)}` }), ' · ', el('b', { class: 'down', text: `숏 청산 ${fusd(sumS)}` }), ' · ' + liqNote(S.coin));
   }
 
   // ---------- 화면: 가격대별 ----------
   function drawPrice() {
     const box = $('#lmCanvasBox'), m = S.model, d = S.data[S.coin]; box.textContent = '';
     const cols = m.cols; if (S.at == null || S.at >= cols.length) S.at = cols.length - 1;
-    const col = cols[S.at], st = exState(d, col.i);
+    const col = cols[S.at];
+    // 거래소별 계산은 무거워서 같은 시점이면 전에 계산한 것을 씁니다
+    if (!S.st || S.st.model !== m || S.st.at !== S.at) S.st = { model: m, at: S.at, st: exState(d, col.i) };
+    let st = S.st.st;
+    // 마지막 봉을 볼 때는 바이낸스 실시간 가격을 쓰고, 수집 뒤 가격이 지나간 청산가는 뺍니다
+    const lv = S.at === cols.length - 1 ? liveView(m) : null;
+    if (lv && lv.on) {
+      const cut = a => a.map((v, k) => { const p = m.priceOf(k); return p >= lv.lo && p <= lv.hi ? 0 : v; });
+      const L = {}, Sh = {}; m.exs.forEach(e => { L[e] = cut(st.L[e]); Sh[e] = cut(st.S[e]); });
+      st = { L, S: Sh, price: lv.price, t: st.t };
+    }
     const W = Math.max(320, box.clientWidth), H = Math.min(560, Math.max(380, Math.round(W * 0.46)));
     const cnv = el('canvas', { width: W * devicePixelRatio, height: H * devicePixelRatio, style: `width:${W}px;height:${H}px;display:block` });
     box.append(cnv);
@@ -216,7 +308,12 @@
     g.lineWidth = 2; g.strokeStyle = '#3ddc97'; g.beginPath(); for (let i = 0; i <= pi; i++) { const X = xOf(i) + bw / 2, Y = yC(cumL[i]); i ? g.lineTo(X, Y) : g.moveTo(X, Y); } g.stroke();
     g.strokeStyle = '#f15f69'; g.beginPath(); for (let i = pi + 1; i < nG; i++) { const X = xOf(i) + bw / 2, Y = yC(cumS[i]); i > pi + 1 ? g.lineTo(X, Y) : g.moveTo(X, Y); } g.stroke();
     const xp = padL + (st.price - p0) / (p1 - p0) * plotW; g.setLineDash([4, 3]); g.strokeStyle = '#3ddc97'; g.lineWidth = 1; g.beginPath(); g.moveTo(xp, plotT); g.lineTo(xp, plotT + plotH); g.stroke(); g.setLineDash([]);
-    g.fillStyle = cv('--fg'); g.font = 'bold 12px JetBrains Mono, Consolas, monospace'; g.textAlign = 'center'; g.fillText(`가격 ${fp(st.price)}`, xp, plotT - 4);
+    g.fillStyle = cv('--fg'); g.font = 'bold 12px JetBrains Mono, Consolas, monospace'; g.textAlign = 'center'; g.fillText(`가격 ${fp(st.price)}${lv && lv.on ? ' (실시간)' : ''}`, xp, plotT - 4);
+    // 마지막 봉: 최근 1시간 실시간 강제청산을 위에서 내려오는 막대로 (초록 = 롱이 청산됨, 빨강 = 숏이 청산됨)
+    if (lv) {
+      const rec = liqOf(S.coin, Date.now() - 36e5).filter(x => x.p >= p0 && x.p < p1), qmax = Math.max(1, ...rec.map(x => x.usd));
+      rec.forEach(x => { const X = padL + (x.p - p0) / (p1 - p0) * plotW; g.fillStyle = x.long ? 'rgba(43,195,165,.9)' : 'rgba(241,95,105,.9)'; g.fillRect(X - 1, plotT, 2.5, Math.max(4, plotH * 0.25 * Math.sqrt(x.usd / qmax))); });
+    }
     // 축
     g.font = '11px JetBrains Mono, Consolas, monospace'; g.fillStyle = cv('--muted');
     g.textAlign = 'right'; for (let f = 0; f <= 1; f += 0.25) g.fillText(fusd(vmax * f), padL - 6, yV(vmax * f) + 4);
@@ -237,7 +334,7 @@
     // 위 요약 + 시점 표시
     $('#lmSum').innerHTML = '';
     $('#lmSum').append(`${fdt(col.t / 1000)} 시점 · 아래 롱 누적 `, el('b', { class: 'up', text: fusd(cumL[0] || 0) }), ' · 위 숏 누적 ', el('b', { class: 'down', text: fusd(cumS[nG - 1] || 0) }),
-      ` · 이번 봉: 새로 생김 ${fusd(col.stat.add)} · 스스로 사라짐 ${fusd(col.stat.close)} · 청산으로 사라짐 ${fusd(col.stat.liq)}`);
+      ` · 이번 봉: 새로 생김 ${fusd(col.stat.add)} · 스스로 사라짐 ${fusd(col.stat.close)} · 청산으로 사라짐 ${fusd(col.stat.liq)}` + (S.at === cols.length - 1 ? " · " + liqNote(S.coin) : ""));
     $('#lmSlider').max = cols.length - 1; $('#lmSlider').value = S.at; $('#lmAt').textContent = fdt(col.t / 1000);
   }
 
@@ -254,9 +351,12 @@
       note.textContent = '청산맵을 계산하는 중…';
       const d = await loadData(S.coin, force);
       if (!S.ex.size || !S.lev.size) { note.textContent = '거래소와 배수를 하나 이상 고르세요.'; return; }
+      const atEnd = S.at == null || !S.model || S.at >= S.model.cols.length - 1; // 마지막 봉을 보고 있었으면 새 자료에서도 마지막 봉
       S.model = build(d);
+      if (atEnd) S.at = null;
+      liveStart(S.coin);
       const fst = EX.filter(([e]) => S.ex.has(e)).map(([e, nm]) => `${nm} ${d.first && d.first[e] ? fdt(d.first[e] / 1000).slice(0, 5) : '-'}부터`).join(' · ');
-      note.textContent = `${S.coin} · ${EX.filter(([e]) => S.ex.has(e)).map(x => x[1]).join(' + ')} · ${[...S.lev].sort((a, b) => a - b).map(x => x + 'x').join(' ')} · OI 자료: ${fst} (자료가 시작된 뒤에 생긴 물량만 보입니다) · 롱/숏 나누기: ${S.split === 'taker' ? '시장가 매수 비율' : '봉 방향(킹피셔식)'} · 실제 포지션이 아닌 추정`;
+      note.textContent = `${S.coin} · ${EX.filter(([e]) => S.ex.has(e)).map(x => x[1]).join(' + ')} · ${[...S.lev].sort((a, b) => a - b).map(x => x + 'x').join(' ')} · OI 자료: ${fst} (자료가 시작된 뒤에 생긴 물량만 보입니다) · 롱/숏 나누기: ${S.split === 'taker' ? '시장가 매수 비율' : '봉 방향(킹피셔식)'} · 실제 포지션이 아닌 추정 · 캔들·현재가·강제청산 점은 바이낸스 선물 실시간 (강제청산은 바이낸스가 코인마다 1초에 1건만 보내 주므로 실제보다 적게 보이고, 이 화면을 연 뒤의 것만 보입니다)`;
       if (S.view === 'map') drawMap(); else drawPrice();
     } catch (e) { note.textContent = e.message; }
   }
@@ -283,12 +383,14 @@
   }
   function start() {
     if (S.started) { refresh(); return; }
-    S.started = true; bind(); syncButtons(); refresh();
-    // 새 자료 확인 (수집은 15분마다)
-    setInterval(async () => {
-      if (U.activeTab() !== 'liq' || document.hidden || S.playing) return;
-      try { const r = await fetch('liqmap/index.json?v=' + Date.now(), { cache: 'no-store' }); const x = await r.json(); if (S.model && x.updated > S.model.updated) { delete S.data[S.coin]; refresh(true); } } catch (e) {}
-    }, 120e3);
+    S.started = true; bind(); syncButtons(); refresh(); liqStart();
+    // 새 자료 확인 (수집은 15분마다): 2분마다, 그리고 숨겨 둔 화면을 다시 볼 때 바로
+    const checkNew = async () => {
+      if (U.activeTab() !== 'liq' || document.hidden || S.playing || !S.model) return;
+      if (await indexTime() > (S.seen[S.coin] || 0)) refresh(true);
+    };
+    setInterval(checkNew, 120e3);
+    document.addEventListener('visibilitychange', () => { checkNew(); liveDraw(); });
   }
   // 청산 라인 탭(liqlines.js)용
   U.liqModel = { EX, loadData, build };
