@@ -179,6 +179,7 @@
   // ---------- 색 ----------
   const STOPS = [[0, [10, 14, 60]], [0.18, [20, 40, 140]], [0.38, [20, 140, 170]], [0.55, [60, 190, 120]], [0.72, [230, 220, 60]], [0.86, [245, 140, 30]], [1, [235, 40, 30]]];
   const colorAt = v => { v = Math.max(0, Math.min(1, v)); let k = 1; while (k < STOPS.length - 1 && STOPS[k][0] < v) k++; const [a, ca] = STOPS[k - 1], [b, cb] = STOPS[k], f = (v - a) / (b - a || 1); return ca.map((x, i) => Math.round(x + (cb[i] - x) * f)); };
+  const LUT = Array.from({ length: 256 }, (_, k) => colorAt(k / 255)); // 색칠을 빠르게 하려고 미리 계산
 
   // ---------- 화면: 지도 ----------
   function drawMap() {
@@ -188,48 +189,60 @@
     box.append(cnv);
     const g = cnv.getContext('2d'); g.scale(devicePixelRatio, devicePixelRatio);
     const histW = Math.min(150, Math.round(W * 0.14)), axisW = 64, padB = 22, mapW = W - histW - axisW, mapH = H - padB;
-    const lv = liveView(m), cols = lv.cols, price = lv.price; if (!cols.length) return;
+    const lv = liveView(m), cols = lv.cols, price = lv.price, n = cols.length; if (!n) return;
     const snapAt = ci => m.snaps[Math.min(ci, m.snaps.length - 1)]; // 실시간으로 붙인 봉은 마지막 수집 시점의 지도
-    let lo = Infinity, hi = -Infinity; cols.forEach(c => { if (c.l < lo) lo = c.l; if (c.h > hi) hi = c.h; });
+    // 보이는 범위: 봉 a~b (확대·이동 안 했으면 전체), 가격 lo~hi (안 정했으면 보이는 봉에 맞춤)
+    const z = S.zoom;
+    if (z && z.n !== n) { if (z.b >= z.n - 0.5) { z.a += n - z.n; z.b += n - z.n; } z.n = n; } // 오른쪽 끝을 보고 있었으면 새 봉을 따라감
+    const a = z ? z.a : 0, b = z ? z.b : n;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = Math.max(0, Math.floor(a)); i < Math.min(n, Math.ceil(b)); i++) { if (cols[i].l < lo) lo = cols[i].l; if (cols[i].h > hi) hi = cols[i].h; }
+    if (!isFinite(lo)) { lo = price * 0.95; hi = price * 1.05; }
     const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
+    if (z && z.lo != null) { lo = z.lo; hi = z.hi; }
+    S.geo = { kind: 'map', mapW, mapH, histW, a, b, lo, hi, n };
     const yOf = p => (hi - p) / (hi - lo) * mapH, pOf = y => hi - y / mapH * (hi - lo);
+    const cw = mapW / (b - a), xOf = i => (i - a) * cw; // i = 봉 번호 (소수 가능)
     const kLo = m.binOf(lo), kHi = m.binOf(hi);
-    // 지도 색칠은 무거워서, 봉 개수·크기·가격 범위가 같으면 전에 칠한 그림을 다시 씁니다
-    const key = [W, H, devicePixelRatio, cols.length, lo, hi].join('|');
+    // 지도 색칠은 무거워서, 보이는 범위·크기가 같으면 전에 칠한 그림을 다시 씁니다
+    const key = [W, H, devicePixelRatio, n, a, b, lo, hi].join('|');
     if (!S.img || S.img.model !== m || S.img.key !== key) {
       // 색 기준: 보이는 칸들의 98% 값
-      const vals = [];
-      for (let x = 0; x < m.snaps.length; x += Math.max(1, Math.floor(m.snaps.length / 200))) for (let k = kLo; k <= kHi; k += 2) { const v = m.snaps[x][k]; if (v > 0) vals.push(v); }
-      vals.sort((a, b) => a - b); const vmax = vals.length ? vals[Math.floor(vals.length * 0.98)] : 1;
+      const vals = [], i0 = Math.max(0, Math.floor(a)), i1 = Math.min(n, Math.ceil(b));
+      for (let x = i0; x < i1; x += Math.max(1, Math.floor((i1 - i0) / 200))) { const s = snapAt(x); for (let k = kLo; k <= kHi; k += 2) { const v = s[k]; if (v > 0) vals.push(v); } }
+      vals.sort((p, q) => p - q); const vmax = vals.length ? vals[Math.floor(vals.length * 0.98)] : 1;
       const img = g.createImageData(Math.max(1, Math.floor(mapW * devicePixelRatio)), Math.max(1, Math.floor(mapH * devicePixelRatio)));
-      const iw = img.width, ih = img.height;
+      const iw = img.width, ih = img.height, D = img.data, bin = new Int32Array(ih), c0 = LUT[0];
+      for (let py = 0; py < ih; py++) bin[py] = m.binOf(pOf((py + 0.5) / devicePixelRatio));
       for (let px = 0; px < iw; px++) {
-        const snap = snapAt(Math.min(cols.length - 1, Math.floor(px / iw * cols.length)));
-        for (let py = 0; py < ih; py++) {
-          const p = pOf(py / devicePixelRatio), v = snap[m.binOf(p)], [r, gg, b] = colorAt(Math.sqrt(v / vmax));
-          const o = (py * iw + px) * 4; img.data[o] = r; img.data[o + 1] = gg; img.data[o + 2] = b; img.data[o + 3] = 255;
+        const ci = Math.floor(a + (px + 0.5) / iw * (b - a)), snap = ci >= 0 && ci < n ? snapAt(ci) : null;
+        for (let py = 0, o = px * 4; py < ih; py++, o += iw * 4) {
+          const v = snap ? snap[bin[py]] : 0, c = v > 0 ? LUT[Math.min(255, Math.sqrt(v / vmax) * 255 | 0)] : c0;
+          D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2]; D[o + 3] = 255;
         }
       }
       S.img = { model: m, key, img };
     }
     g.putImageData(S.img.img, 0, 0); // putImageData는 scale을 무시하므로 장치 픽셀 기준으로 그렸습니다
+    g.save(); g.beginPath(); g.rect(0, 0, mapW, mapH); g.clip();
     // 봉
-    const cw = mapW / cols.length, up = '#3ddc97', dn = '#ff5a6a';
-    cols.forEach((c, x) => {
-      const cx = x * cw + cw / 2; g.strokeStyle = c.c >= c.o ? up : dn; g.lineWidth = 1;
+    const up = '#3ddc97', dn = '#ff5a6a';
+    for (let x = Math.max(0, Math.floor(a)); x < Math.min(n, Math.ceil(b)); x++) {
+      const c = cols[x], cx = xOf(x + 0.5); g.strokeStyle = c.c >= c.o ? up : dn; g.lineWidth = 1;
       g.beginPath(); g.moveTo(cx, yOf(c.h)); g.lineTo(cx, yOf(c.l)); g.stroke();
       if (cw >= 3) { g.fillStyle = g.strokeStyle; const y1 = yOf(Math.max(c.o, c.c)), y2 = yOf(Math.min(c.o, c.c)); g.fillRect(cx - cw * 0.35, y1, cw * 0.7, Math.max(1, y2 - y1)); }
-    });
+    }
     // 실시간 강제청산: 점 크기 = 금액, 초록 = 롱이 청산됨, 빨강 = 숏이 청산됨
-    const per = TF[S.tf] * M15, t0 = cols[0].t;
-    liqOf(S.coin, t0).forEach(x => {
-      let ci = cols.length - 1; while (ci > 0 && cols[ci].t > x.t) ci--;
-      const cx = (ci + Math.min(1, (x.t - cols[ci].t) / per)) * cw, cy = yOf(x.p); if (cy < 0 || cy > mapH) return;
-      g.beginPath(); g.arc(Math.min(mapW - 2, cx), cy, Math.min(11, 2.5 + Math.sqrt(x.usd / 2e4)), 0, 7);
+    const per = TF[S.tf] * M15;
+    liqOf(S.coin, cols[0].t).forEach(x => {
+      let ci = n - 1; while (ci > 0 && cols[ci].t > x.t) ci--;
+      const cx = xOf(ci + Math.min(1, (x.t - cols[ci].t) / per)), cy = yOf(x.p);
+      g.beginPath(); g.arc(cx, cy, Math.min(11, 2.5 + Math.sqrt(x.usd / 2e4)), 0, 7);
       g.fillStyle = x.long ? 'rgba(43,195,165,.85)' : 'rgba(241,95,105,.85)'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1; g.stroke();
     });
-    // 현재가
-    const yp = yOf(price); g.setLineDash([4, 3]); g.strokeStyle = '#ffffff'; g.beginPath(); g.moveTo(0, yp); g.lineTo(mapW + histW, yp); g.stroke(); g.setLineDash([]);
+    g.restore();
+    // 현재가 (보이는 가격 범위 안에 있을 때만)
+    const yp = yOf(price), pin = yp >= 0 && yp <= mapH;
     // 오른쪽: 지금 남은 물량 (위 = 숏 청산, 아래 = 롱 청산). 수집 뒤 가격이 지나간 자리는 뺍니다
     const last = m.snaps[m.snaps.length - 1], now = k => { const p = m.priceOf(k); return p >= lv.lo && p <= lv.hi ? 0 : last[k]; };
     let hm = 0; for (let k = kLo; k <= kHi; k++) hm = Math.max(hm, now(k));
@@ -239,19 +252,21 @@
       const y = yOf(p + m.step / 2), hgt = Math.max(1, yOf(p - m.step / 2) - y);
       g.fillStyle = p > price ? '#f15f69' : '#2bc3a5'; g.fillRect(mapW + 4, y, (histW - 8) * v / hm, hgt);
     }
+    if (pin) { g.setLineDash([4, 3]); g.strokeStyle = '#ffffff'; g.beginPath(); g.moveTo(0, yp); g.lineTo(mapW + histW, yp); g.stroke(); g.setLineDash([]); }
     // 가격 축
     g.fillStyle = cv('--muted'); g.font = '11px JetBrains Mono, Consolas, monospace'; g.textAlign = 'left';
     const ps = niceStep((hi - lo) / 8); for (let p = Math.ceil(lo / ps) * ps; p < hi; p += ps) g.fillText(fp(p), mapW + histW + 6, yOf(p) + 4);
-    g.fillStyle = '#ffffff'; g.fillRect(mapW + histW + 2, yp - 8, axisW - 4, 16); g.fillStyle = '#000'; g.fillText(fp(price), mapW + histW + 6, yp + 4);
+    if (pin) { g.fillStyle = '#ffffff'; g.fillRect(mapW + histW + 2, yp - 8, axisW - 4, 16); g.fillStyle = '#000'; g.fillText(fp(price), mapW + histW + 6, yp + 4); }
     // 날짜 축
     g.fillStyle = cv('--muted'); g.textAlign = 'center';
-    const every = Math.max(1, Math.round(cols.length / 7)); for (let x = 0; x < cols.length; x += every) g.fillText(fdt(cols[x].t / 1000).slice(0, 5), x * cw, H - 6);
+    const every = Math.max(1, Math.round((b - a) / 7));
+    for (let x = Math.max(0, Math.ceil(a / every) * every); x < Math.min(n, b); x += every) g.fillText(fdt(cols[x].t / 1000).slice(0, 5), Math.max(16, Math.min(mapW - 16, xOf(x))), H - 6);
     // 마우스: 시각·가격·남은 물량
     const tip = $('#lmTip');
     cnv.onmousemove = e => {
-      const r = cnv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-      if (x > mapW || y > mapH) { tip.hidden = true; return; }
-      const ci = Math.min(cols.length - 1, Math.floor(x / cw)), p = pOf(y), v = snapAt(ci)[m.binOf(p)];
+      const r = cnv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, ci = Math.floor(a + x / cw);
+      if (S.drag || x > mapW || y > mapH || ci < 0 || ci >= n) { tip.hidden = true; return; }
+      const p = pOf(y), v = snapAt(ci)[m.binOf(p)];
       tip.hidden = false; tip.style.left = Math.min(x + 14, W - 200) + 'px'; tip.style.top = (y + 14) + 'px';
       tip.textContent = `${fdt(cols[ci].t / 1000)} · ${fp(p)} · ${p > cols[ci].c ? '숏' : '롱'} 청산 대기 ${fusd(v)}${cols[ci].live ? ' (지도는 마지막 수집 시점)' : ''}`;
     };
@@ -287,8 +302,10 @@
     g.strokeStyle = cv('--muted'); g.lineWidth = 1; g.beginPath();
     cols.forEach((c, x) => { const X = padL + x / (cols.length - 1 || 1) * plotW, Y = 6 + (hi - c.c) / (hi - lo || 1) * (topH - 12); x ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke();
     const mx = padL + S.at / (cols.length - 1 || 1) * plotW; g.strokeStyle = '#e0b84a'; g.lineWidth = 2; g.beginPath(); g.moveTo(mx, 0); g.lineTo(mx, topH); g.stroke();
-    // 가격 칸 묶기: 현재가 ±20%를 약 260칸으로
-    const p0 = st.price * 0.8, p1 = st.price * 1.2, groupN = Math.max(1, Math.round((p1 - p0) / m.step / 260)), gs = m.step * groupN;
+    // 가격 칸 묶기: 보이는 가격 범위(기본 현재가 ±20%, 휠·끌기로 바꿈)를 약 260칸으로
+    const p0 = S.pz ? S.pz.p0 : st.price * 0.8, p1 = S.pz ? S.pz.p1 : st.price * 1.2;
+    S.geo = { kind: 'price', padL, plotW, plotT, p0, p1 };
+    const groupN = Math.max(1, Math.round((p1 - p0) / m.step / 260)), gs = m.step * groupN;
     const nG = Math.ceil((p1 - p0) / gs), byEx = m.exs.map(() => new Float64Array(nG)), side = new Int8Array(nG);
     for (let k = m.binOf(p0); k <= m.binOf(p1); k++) {
       const p = m.priceOf(k), gi = Math.floor((p - p0) / gs); if (gi < 0 || gi >= nG) continue;
@@ -298,7 +315,7 @@
     const tot = Array.from({ length: nG }, (_, i) => byEx.reduce((t, a) => t + a[i], 0)), vmax = Math.max(...tot, 1);
     // 누적선: 현재가에서 바깥으로
     const cumL = new Float64Array(nG), cumS = new Float64Array(nG);
-    const pi = Math.floor((st.price - p0) / gs);
+    const pi = Math.max(-1, Math.min(nG - 1, Math.floor((st.price - p0) / gs))); // 현재가가 화면 밖이면 가장자리로
     for (let i = pi, s = 0; i >= 0; i--) { s += side[i] > 0 ? tot[i] : 0; cumL[i] = s; }
     for (let i = pi + 1, s = 0; i < nG; i++) { s += side[i] < 0 ? tot[i] : 0; cumS[i] = s; }
     const cmax = Math.max(cumL[0] || 0, cumS[nG - 1] || 0, 1);
@@ -307,8 +324,11 @@
     for (let i = 0; i < nG; i++) { let y = plotT + plotH; m.exs.forEach((e, ei) => { const v = byEx[ei][i]; if (!v) return; const hgt = v / vmax * plotH; g.fillStyle = EX.find(x => x[0] === e)[2]; g.fillRect(xOf(i), y - hgt, Math.max(1, bw - 0.5), hgt); y -= hgt; }); }
     g.lineWidth = 2; g.strokeStyle = '#3ddc97'; g.beginPath(); for (let i = 0; i <= pi; i++) { const X = xOf(i) + bw / 2, Y = yC(cumL[i]); i ? g.lineTo(X, Y) : g.moveTo(X, Y); } g.stroke();
     g.strokeStyle = '#f15f69'; g.beginPath(); for (let i = pi + 1; i < nG; i++) { const X = xOf(i) + bw / 2, Y = yC(cumS[i]); i > pi + 1 ? g.lineTo(X, Y) : g.moveTo(X, Y); } g.stroke();
-    const xp = padL + (st.price - p0) / (p1 - p0) * plotW; g.setLineDash([4, 3]); g.strokeStyle = '#3ddc97'; g.lineWidth = 1; g.beginPath(); g.moveTo(xp, plotT); g.lineTo(xp, plotT + plotH); g.stroke(); g.setLineDash([]);
-    g.fillStyle = cv('--fg'); g.font = 'bold 12px JetBrains Mono, Consolas, monospace'; g.textAlign = 'center'; g.fillText(`가격 ${fp(st.price)}${lv && lv.on ? ' (실시간)' : ''}`, xp, plotT - 4);
+    const xp = padL + (st.price - p0) / (p1 - p0) * plotW;
+    if (xp >= padL && xp <= padL + plotW) {
+      g.setLineDash([4, 3]); g.strokeStyle = '#3ddc97'; g.lineWidth = 1; g.beginPath(); g.moveTo(xp, plotT); g.lineTo(xp, plotT + plotH); g.stroke(); g.setLineDash([]);
+      g.fillStyle = cv('--fg'); g.font = 'bold 12px JetBrains Mono, Consolas, monospace'; g.textAlign = 'center'; g.fillText(`가격 ${fp(st.price)}${lv && lv.on ? ' (실시간)' : ''}`, Math.max(padL + 60, Math.min(padL + plotW - 60, xp)), plotT - 4);
+    }
     // 마지막 봉: 최근 1시간 실시간 강제청산을 위에서 내려오는 막대로 (초록 = 롱이 청산됨, 빨강 = 숏이 청산됨)
     if (lv) {
       const rec = liqOf(S.coin, Date.now() - 36e5).filter(x => x.p >= p0 && x.p < p1), qmax = Math.max(1, ...rec.map(x => x.usd));
@@ -325,7 +345,7 @@
     const tip = $('#lmTip');
     cnv.onmousemove = e => {
       const r = cnv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, i = Math.floor((x - padL) / bw);
-      if (y < plotT || i < 0 || i >= nG) { tip.hidden = true; return; }
+      if (S.drag || y < plotT || i < 0 || i >= nG) { tip.hidden = true; return; }
       const a = p0 + i * gs, dp = ((a + gs / 2) / st.price - 1) * 100;
       tip.hidden = false; tip.style.left = Math.min(x + 14, W - 240) + 'px'; tip.style.top = (y + 10) + 'px';
       tip.textContent = `${fp(a)} ~ ${fp(a + gs)} · 현재가 ${dp > 0 ? '위' : '아래'} ${dp.toFixed(1)}% · ${side[i] < 0 ? '숏' : '롱'} 청산 자리 · ` + (tot[i] ? m.exs.map((e, ei) => byEx[ei][i] ? `${EX.find(x => x[0] === e)[1]} ${fusd(byEx[ei][i])}` : '').filter(Boolean).join(' · ') : '물량 없음');
@@ -362,10 +382,10 @@
   }
   function bind() {
     const seg = (id, f) => $('#' + id).addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; f(b.dataset.v); save(); syncButtons(); refresh(); });
-    seg('lmCoinSeg', v => { S.coin = v; S.at = null; });
+    seg('lmCoinSeg', v => { S.coin = v; S.at = null; S.zoom = null; S.pz = null; });
     seg('lmViewSeg', v => { S.view = v; });
-    seg('lmTfSeg', v => { S.tf = v; S.at = null; });
-    seg('lmDaysSeg', v => { S.days = +v; S.at = null; });
+    seg('lmTfSeg', v => { S.tf = v; S.at = null; S.zoom = null; });
+    seg('lmDaysSeg', v => { S.days = +v; S.at = null; S.zoom = null; });
     seg('lmSplitSeg', v => { S.split = v; });
     seg('lmExSeg', v => { if (v === 'all') { S.ex = new Set(EX.map(x => x[0])); } else if (S.ex.has(v)) S.ex.delete(v); else S.ex.add(v); });
     seg('lmLevSeg', v => { v = +v; if (S.lev.has(v)) S.lev.delete(v); else S.lev.add(v); });
@@ -379,6 +399,55 @@
       e.target.textContent = '멈춤';
       S.playing = setInterval(() => { if (S.at >= S.model.cols.length - 1 || U.activeTab() !== 'liq') { clearInterval(S.playing); S.playing = null; e.target.textContent = '재생'; return; } S.at++; drawPrice(); }, 120);
     });
+    // 확대·이동: 휠 = 확대·축소 (지도는 시간, 오른쪽 가격 칸에서는 가격), 끌기 = 이동, 가격 칸 위아래 끌기 = 가격 폭, 더블클릭 = 처음대로
+    // 그림(canvas)은 그릴 때마다 새로 만들어지므로 손잡이는 바깥 상자에 답니다. S.geo = 마지막으로 그린 화면의 범위
+    const box = $('#lmCanvasBox');
+    let raf = 0;
+    const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (S.model) (S.view === 'map' ? drawMap : drawPrice)(); }); };
+    const at = e => { const r = box.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const zoomOf = G => S.zoom || (S.zoom = { a: G.a, b: G.b, lo: null, hi: null, n: G.n });
+    const clampCols = (z, G) => { // 최소 5봉, 최대 전체의 1.5배, 양 끝에 빈 공간은 화면 폭의 절반까지
+      let w = Math.max(5, Math.min(G.n * 1.5, z.b - z.a)); const c = (z.a + z.b) / 2; z.a = c - w / 2; z.b = c + w / 2;
+      if (z.b > G.n + w / 2) { z.b = G.n + w / 2; z.a = z.b - w; } if (z.a < -w / 2) { z.a = -w / 2; z.b = z.a + w; }
+    };
+    box.addEventListener('wheel', e => {
+      const G = S.geo; if (!G || !S.model) return;
+      const [x, y] = at(e), f = Math.exp(Math.max(-3, Math.min(3, e.deltaY / 100)) * 0.15); // 1보다 크면 축소
+      if (G.kind === 'map') {
+        if (y > G.mapH) return;
+        const z = zoomOf(G);
+        if (x > G.mapW + G.histW || e.shiftKey) {
+          const p = G.hi - y / G.mapH * (G.hi - G.lo); z.lo = p - (p - G.lo) * f; z.hi = p + (G.hi - p) * f;
+        } else if (x <= G.mapW) {
+          const c = G.a + x / G.mapW * (G.b - G.a); z.a = c - (c - G.a) * f; z.b = c + (G.b - c) * f; clampCols(z, G);
+        } else return;
+      } else {
+        if (y < G.plotT) return;
+        const p = G.p0 + (x - G.padL) / G.plotW * (G.p1 - G.p0), w = (G.p1 - G.p0) * f;
+        if (w < S.model.step * 20) return;
+        S.pz = { p0: p - (p - G.p0) * f, p1: p + (G.p1 - p) * f };
+      }
+      e.preventDefault(); redraw();
+    }, { passive: false });
+    box.addEventListener('mousedown', e => {
+      const G = S.geo; if (!G || e.button !== 0) return;
+      const [x, y] = at(e);
+      if (G.kind === 'price' && y < G.plotT) return;
+      S.drag = { x, y, G: { ...G }, scale: G.kind === 'map' && x > G.mapW + G.histW };
+      box.style.cursor = S.drag.scale ? 'ns-resize' : 'grabbing'; e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      const d = S.drag; if (!d) return;
+      const [x, y] = at(e), dx = x - d.x, dy = y - d.y, G = d.G;
+      if (G.kind === 'map') {
+        const z = zoomOf(G);
+        if (d.scale) { const f = Math.exp(dy * 0.006), mid = (G.lo + G.hi) / 2; z.lo = mid - (mid - G.lo) * f; z.hi = mid + (G.hi - mid) * f; }
+        else { const dc = -dx / G.mapW * (G.b - G.a), dp = dy / G.mapH * (G.hi - G.lo); z.a = G.a + dc; z.b = G.b + dc; clampCols(z, G); z.lo = G.lo + dp; z.hi = G.hi + dp; }
+      } else { const dp = -dx / G.plotW * (G.p1 - G.p0); S.pz = { p0: G.p0 + dp, p1: G.p1 + dp }; }
+      redraw();
+    });
+    window.addEventListener('mouseup', () => { if (S.drag) { S.drag = null; box.style.cursor = ''; } });
+    box.addEventListener('dblclick', () => { if (S.view === 'map') S.zoom = null; else S.pz = null; redraw(); });
     let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (U.activeTab() === 'liq' && S.model) (S.view === 'map' ? drawMap : drawPrice)(); }, 200); });
   }
   function start() {

@@ -430,5 +430,6 @@ footer { color: var(--faint); font-size: 11.5px; display: grid; gap: 4px; paddin
 .lm-k { font-size: 12.5px; color: var(--muted); }
 .lm-sum { font-size: 12.5px; margin: 4px 0 0; }
 .lm-wrap { position: relative; padding: 0 12px; }
-#lmCanvasBox { width: 100%; min-height: 380px; }
+#lmCanvasBox { width: 100%; min-height: 380px; cursor: grab; user-select: none; }
+.lm-hint { padding: 6px 16px 0; font-size: 12px; }
 .lm-tip { position: absolute; pointer-events: none; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; font-size: 12px; max-width: 320px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
