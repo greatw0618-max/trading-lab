@@ -70,7 +70,7 @@
       // 2) 이 봉 동안의 OI 변화 (값이 없는 칸은 직전 값을 이어 씀)
       exs.forEach(e => {
         const end = d.oi[e] && d.oi[e][t + M15];
-        if (end == null) return;
+        if (!(end > 0)) return; // 0·빈 값은 잘못 들어온 자료로 보고 건너뜀 (OKX가 가끔 0을 줌 → 전부 지웠다 다시 쌓아 지도가 끊겨 보였음)
         const prev = last[e]; last[e] = end;
         if (prev == null) return; // 첫 값은 기준점
         const dq = end - prev, A = L[e], B = Sh[e];
@@ -107,7 +107,7 @@
         const A = L[e], B = Sh[e];
         for (let k = lb; k < nb; k++) A[k] = 0;
         for (let k = 0; k <= hb; k++) B[k] = 0;
-        const end = d.oi[e] && d.oi[e][t + M15]; if (end == null) return;
+        const end = d.oi[e] && d.oi[e][t + M15]; if (!(end > 0)) return;
         const prev = last[e]; last[e] = end; if (prev == null) return;
         const dq = end - prev;
         if (dq > 0) {
