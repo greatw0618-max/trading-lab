@@ -11,6 +11,15 @@
   const M15 = 900e3, MMR = 0.004; // 유지 증거금 0.4% (청산가가 진입가 쪽으로 조금 당겨짐)
   const EX = [['binance', '바이낸스', '#5b6cff'], ['bybit', '바이빗', '#3fae6a'], ['okx', 'OKX', '#e39be6'], ['bitget', '비트겟', '#9aa3ad'], ['hl', '하이퍼리퀴드', '#a46bff']];
   const LEV = [[10, 0.35], [25, 0.3], [50, 0.2], [100, 0.15]]; // 레버리지별 비중 (고른 것끼리 다시 나눔)
+  // 새 포지션은 한 가격에 몰지 않고 퍼뜨립니다: 진입가는 그 봉 저가~고가 사이 다섯 곳, 배수는 고른 배수 근처 세 개 (예: 10배 → 8·10·12.5배)
+  const ENTRY = [0.1, 0.3, 0.5, 0.7, 0.9], LSPREAD = [0.8, 1, 1.25];
+  function addPos(A, B, binOf, levs, wsum, dq, share, h, l) {
+    const n = ENTRY.length * LSPREAD.length;
+    levs.forEach(([lev, w]) => {
+      const q = dq * w / wsum / n, qa = q * share, qb = q * (1 - share);
+      ENTRY.forEach(f => { const px = l + (h - l) * f; LSPREAD.forEach(s => { const L = lev * s; A[binOf(px * (1 - 1 / L + MMR))] += qa; B[binOf(px * (1 + 1 / L - MMR))] += qb; }); });
+    });
+  }
   const TF = { '15m': 1, '1h': 4, '4h': 16 }, RANGE = [3, 7, 14, 30, 60];
   const S = {
     coin: store.get('lmCoin', 'BTC'), view: store.get('lmView', 'map'), tf: store.get('lmTf', '1h'), days: +store.get('lmDays', 14), split: store.get('lmSplit', 'taker'),
@@ -36,16 +45,16 @@
   // ---------- 추정 모델 ----------
   // 전체 60일을 15분 단위로 한 번 계산하고, 화면 봉(15분·1시간·4시간)이 끝날 때마다 가격별 남은 물량을 저장합니다.
   function niceStep(v) { const p = 10 ** Math.floor(Math.log10(v)), m = v / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; }
-  function build(d, o = S) { // o: { ex, lev, days, tf, split } — 청산 라인 탭도 같은 계산을 씁니다
+  function build(d, opt = S) { // opt: { ex, lev, days, tf, split } — 청산 라인 탭도 같은 계산을 씁니다
     const bars = d.bars, N = bars.length; if (N < 10) throw new Error('봉 자료가 부족합니다');
     let lo = Infinity, hi = -Infinity; bars.forEach(b => { if (b[3] < lo) lo = b[3]; if (b[2] > hi) hi = b[2]; });
     const pmin = lo * 0.86, pmax = hi * 1.14, step = niceStep((pmax - pmin) / 700), b0 = Math.floor(pmin / step), nb = Math.ceil(pmax / step) - b0 + 1;
     const priceOf = i => (b0 + i) * step, binOf = p => Math.max(0, Math.min(nb - 1, Math.round(p / step) - b0));
-    const levs = LEV.filter(([L]) => o.lev.has(L)), wsum = levs.reduce((t, [, w]) => t + w, 0) || 1;
-    const exs = EX.map(e => e[0]).filter(e => o.ex.has(e));
+    const levs = LEV.filter(([L]) => opt.lev.has(L)), wsum = levs.reduce((t, [, w]) => t + w, 0) || 1;
+    const exs = EX.map(e => e[0]).filter(e => opt.ex.has(e));
     const L = {}, Sh = {}, last = {};
     exs.forEach(e => { L[e] = new Float64Array(nb); Sh[e] = new Float64Array(nb); last[e] = null; });
-    const per = TF[o.tf], from = Math.max(0, N - Math.round(o.days * 96)), snaps = [], cols = [];
+    const per = TF[opt.tf], from = Math.max(0, N - Math.round(opt.days * 96)), snaps = [], cols = [];
     const stats = []; // 봉마다 새로 생김·스스로 사라짐·청산으로 사라짐 (달러, 고른 거래소 합)
     let curStat = { add: 0, close: 0, liq: 0 };
     for (let i = 0; i < N; i++) {
@@ -67,13 +76,9 @@
         const dq = end - prev, A = L[e], B = Sh[e];
         if (dq > 0) {
           const own = d.buy[e] && d.buy[e][t];
-          const share = o.split === 'taker' ? (own != null ? own : bnBuy) : Math.max(0.15, Math.min(0.85, 0.5 + 0.5 * (h > l ? (c - o) / (h - l) : 0)));
-          const px = (h + l + c) / 3;
-          levs.forEach(([lev, w]) => {
-            const q = dq * w / wsum;
-            A[binOf(px * (1 - 1 / lev + MMR))] += q * share; B[binOf(px * (1 + 1 / lev - MMR))] += q * (1 - share);
-          });
-          curStat.add += dq * px;
+          const share = opt.split === 'taker' ? (own != null ? own : bnBuy) : Math.max(0.15, Math.min(0.85, 0.5 + 0.5 * (h > l ? (c - o) / (h - l) : 0)));
+          addPos(A, B, binOf, levs, wsum, dq, share, h, l);
+          curStat.add += dq * (h + l + c) / 3;
         } else if (dq < 0 && prev > 0) {
           const f = end / prev;
           let tot = 0; for (let k = 0; k < nb; k++) { tot += (A[k] + B[k]) * priceOf(k) * (1 - f); A[k] *= f; B[k] *= f; }
@@ -108,8 +113,7 @@
         if (dq > 0) {
           const own = d.buy[e] && d.buy[e][t];
           const share = S.split === 'taker' ? (own != null ? own : bnBuy) : Math.max(0.15, Math.min(0.85, 0.5 + 0.5 * (h > l ? (c - o) / (h - l) : 0)));
-          const px = (h + l + c) / 3;
-          levs.forEach(([lev, w]) => { const q = dq * w / wsum; A[binOf(px * (1 - 1 / lev + MMR))] += q * share; B[binOf(px * (1 + 1 / lev - MMR))] += q * (1 - share); });
+          addPos(A, B, binOf, levs, wsum, dq, share, h, l);
         } else if (dq < 0 && prev > 0) { const f = end / prev; for (let k = 0; k < nb; k++) { A[k] *= f; B[k] *= f; } }
       });
     }
@@ -179,6 +183,8 @@
   // ---------- 색 ----------
   const STOPS = [[0, [10, 14, 60]], [0.18, [20, 40, 140]], [0.38, [20, 140, 170]], [0.55, [60, 190, 120]], [0.72, [230, 220, 60]], [0.86, [245, 140, 30]], [1, [235, 40, 30]]];
   const colorAt = v => { v = Math.max(0, Math.min(1, v)); let k = 1; while (k < STOPS.length - 1 && STOPS[k][0] < v) k++; const [a, ca] = STOPS[k - 1], [b, cb] = STOPS[k], f = (v - a) / (b - a || 1); return ca.map((x, i) => Math.round(x + (cb[i] - x) * f)); };
+  // 색 기준: 보이는 칸 중 상위 0.5% 물량을 빨강 끝으로, 지수 0.8 (작을수록 중간 물량이 밝아짐). 큰 덩어리만 빨갛게 튀도록 맞춤
+  const COLOR_PCT = 0.995, COLOR_GAMMA = 0.8;
   const LUT = Array.from({ length: 256 }, (_, k) => colorAt(k / 255)); // 색칠을 빠르게 하려고 미리 계산
 
   // ---------- 화면: 지도 ----------
@@ -209,15 +215,17 @@
     if (!S.img || S.img.model !== m || S.img.key !== key) {
       // 색 기준: 보이는 칸들의 98% 값
       const vals = [], i0 = Math.max(0, Math.floor(a)), i1 = Math.min(n, Math.ceil(b));
-      for (let x = i0; x < i1; x += Math.max(1, Math.floor((i1 - i0) / 200))) { const s = snapAt(x); for (let k = kLo; k <= kHi; k += 2) { const v = s[k]; if (v > 0) vals.push(v); } }
-      vals.sort((p, q) => p - q); const vmax = vals.length ? vals[Math.floor(vals.length * 0.98)] : 1;
+      for (let x = i0; x < i1; x += Math.max(1, Math.floor((i1 - i0) / 200))) { const s = snapAt(x); for (let k = kLo; k <= kHi; k += 2) { const v = (s[k] * 3 + ((s[k - 1] || 0) + (s[k + 1] || 0)) * 2 + (s[k - 2] || 0) + (s[k + 2] || 0)) / 9; if (v > 0) vals.push(v); } }
+      vals.sort((p, q) => p - q); const vmax = vals.length ? vals[Math.floor(vals.length * COLOR_PCT)] : 1;
       const img = g.createImageData(Math.max(1, Math.floor(mapW * devicePixelRatio)), Math.max(1, Math.floor(mapH * devicePixelRatio)));
       const iw = img.width, ih = img.height, D = img.data, bin = new Int32Array(ih), c0 = LUT[0];
       for (let py = 0; py < ih; py++) bin[py] = m.binOf(pOf((py + 0.5) / devicePixelRatio));
       for (let px = 0; px < iw; px++) {
         const ci = Math.floor(a + (px + 0.5) / iw * (b - a)), snap = ci >= 0 && ci < n ? snapAt(ci) : null;
         for (let py = 0, o = px * 4; py < ih; py++, o += iw * 4) {
-          const v = snap ? snap[bin[py]] : 0, c = v > 0 ? LUT[Math.min(255, Math.sqrt(v / vmax) * 255 | 0)] : c0;
+          // 색만 이웃 두 칸까지 부드럽게 섞음 (숫자·물량 계산은 그대로)
+          const k = bin[py], v = snap ? (snap[k] * 3 + ((snap[k - 1] || 0) + (snap[k + 1] || 0)) * 2 + (snap[k - 2] || 0) + (snap[k + 2] || 0)) / 9 : 0;
+          const c = v > 0 ? LUT[Math.min(255, Math.pow(v / vmax, COLOR_GAMMA) * 255 | 0)] : c0;
           D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2]; D[o + 3] = 255;
         }
       }
@@ -257,6 +265,7 @@
     g.fillStyle = cv('--muted'); g.font = '11px JetBrains Mono, Consolas, monospace'; g.textAlign = 'left';
     const ps = niceStep((hi - lo) / 8); for (let p = Math.ceil(lo / ps) * ps; p < hi; p += ps) g.fillText(fp(p), mapW + histW + 6, yOf(p) + 4);
     if (pin) { g.fillStyle = '#ffffff'; g.fillRect(mapW + histW + 2, yp - 8, axisW - 4, 16); g.fillStyle = '#000'; g.fillText(fp(price), mapW + histW + 6, yp + 4); }
+    g.fillStyle = cv('--muted'); g.font = '11px JetBrains Mono, Consolas, monospace'; g.textAlign = 'center'; g.fillText(`${fdt(m.updated / 1000)} 남은 물량`, mapW + (histW + axisW) / 2, H - 6);
     // 날짜 축
     g.fillStyle = cv('--muted'); g.textAlign = 'center';
     const every = Math.max(1, Math.round((b - a) / 7));
@@ -266,15 +275,21 @@
     cnv.onmousemove = e => {
       const r = cnv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, ci = Math.floor(a + x / cw);
       if (S.drag || x > mapW || y > mapH || ci < 0 || ci >= n) { tip.hidden = true; return; }
-      const p = pOf(y), v = snapAt(ci)[m.binOf(p)];
-      tip.hidden = false; tip.style.left = Math.min(x + 14, W - 200) + 'px'; tip.style.top = (y + 14) + 'px';
-      tip.textContent = `${fdt(cols[ci].t / 1000)} · ${fp(p)} · ${p > cols[ci].c ? '숏' : '롱'} 청산 대기 ${fusd(v)}${cols[ci].live ? ' (지도는 마지막 수집 시점)' : ''}`;
+      // 그 시점에 남은 청산가는 봉 아래 = 롱, 위 = 숏으로 정확히 나뉨 (봉이 지나간 자리는 이미 지워짐)
+      const p = pOf(y), k = m.binOf(p), v = snapAt(ci)[k] || 0, c = cols[ci], isShort = m.priceOf(k) > c.c;
+      const amt = v ? `${(v / m.priceOf(k)).toFixed(v / m.priceOf(k) < 100 ? 1 : 0)} ${S.coin} (${fusd(v)})` : `0 ${S.coin} ($0)`;
+      tip.hidden = false; tip.style.left = Math.min(x + 14, W - 300) + 'px'; tip.style.top = (y + 14) + 'px';
+      tip.textContent = '';
+      tip.append(el('b', { text: `${fdt(c.t / 1000)} · ${fp(p)}` }), el('br'), `시 ${fp(c.o)} 고 ${fp(c.h)} 저 ${fp(c.l)} 종 ${fp(c.c)}`, el('br'),
+        el('span', { class: 'up', text: `롱 청산 ${isShort ? `0 ${S.coin} ($0)` : amt}` }), ' · ', el('span', { class: 'down', text: `숏 청산 ${isShort ? amt : `0 ${S.coin} ($0)`}` }),
+        c.live ? el('div', { class: 'muted', text: '지도는 마지막 수집 시점' }) : '');
     };
     cnv.onmouseleave = () => { tip.hidden = true; };
     // 위 요약
-    let sumL = 0, sumS = 0; for (let k = kLo; k <= kHi; k++) { if (m.priceOf(k) > price) sumS += now(k); else sumL += now(k); }
+    let sumL = 0, sumS = 0, allL = 0, allS = 0;
+    for (let k = 0; k < m.nb; k++) { const v = now(k), up = m.priceOf(k) > price; if (up) allS += v; else allL += v; if (k >= kLo && k <= kHi) { if (up) sumS += v; else sumL += v; } }
     $('#lmSum').innerHTML = '';
-    $('#lmSum').append(`청산 물량 ${fdt(m.updated / 1000)} 기준${lv.on ? ' · 가격 실시간' : ''} · 화면 안 남은 `, el('b', { class: 'up', text: `롱 청산 ${fusd(sumL)}` }), ' · ', el('b', { class: 'down', text: `숏 청산 ${fusd(sumS)}` }), ' · ' + liqNote(S.coin));
+    $('#lmSum').append(`${fdt(m.updated / 1000)} 남은 `, el('b', { class: 'up', text: `롱 청산 ${fusd(allL)}` }), ' · ', el('b', { class: 'down', text: `숏 청산 ${fusd(allS)}` }), ` (화면 안: 롱 ${fusd(sumL)} · 숏 ${fusd(sumS)})${lv.on ? ' · 가격 실시간' : ''} · ` + liqNote(S.coin));
   }
 
   // ---------- 화면: 가격대별 ----------
@@ -376,7 +391,9 @@
       if (atEnd) S.at = null;
       liveStart(S.coin);
       const fst = EX.filter(([e]) => S.ex.has(e)).map(([e, nm]) => `${nm} ${d.first && d.first[e] ? fdt(d.first[e] / 1000).slice(0, 5) : '-'}부터`).join(' · ');
-      note.textContent = `${S.coin} · ${EX.filter(([e]) => S.ex.has(e)).map(x => x[1]).join(' + ')} · ${[...S.lev].sort((a, b) => a - b).map(x => x + 'x').join(' ')} · OI 자료: ${fst} (자료가 시작된 뒤에 생긴 물량만 보입니다) · 롱/숏 나누기: ${S.split === 'taker' ? '시장가 매수 비율' : '봉 방향(킹피셔식)'} · 실제 포지션이 아닌 추정 · 캔들·현재가·강제청산 점은 바이낸스 선물 실시간 (강제청산은 바이낸스가 코인마다 1초에 1건만 보내 주므로 실제보다 적게 보이고, 이 화면을 연 뒤의 것만 보입니다)`;
+      const head = $('#lmHead'); head.textContent = '';
+      head.append(el('b', { text: S.coin }), ` · ${EX.filter(([e]) => S.ex.has(e)).map(x => x[1]).join(' + ')} · ${[...S.lev].sort((a, b) => a - b).map(x => x + 'x').join(' ')} · 이 기기 시각 · 휠 = 확대/축소 · 끌기 = 이동 · 가격 칸·날짜 칸 끌기 = 늘이기 · 더블클릭 = 처음대로 · `, el('span', { class: 'warn', text: `OI 자료 ${fst} (그 전 포지션은 빠짐)` }));
+      note.textContent = `롱/숏 나누기: ${S.split === 'taker' ? '시장가 매수 비율' : '봉 방향(킹피셔식)'} · 실제 포지션이 아닌 추정 · 캔들·현재가·강제청산 점은 바이낸스 선물 실시간 (강제청산은 바이낸스가 코인마다 1초에 1건만 보내 주므로 실제보다 적게 보이고, 이 화면을 연 뒤의 것만 보입니다)`;
       if (S.view === 'map') drawMap(); else drawPrice();
     } catch (e) { note.textContent = e.message; }
   }
@@ -414,7 +431,7 @@
       const G = S.geo; if (!G || !S.model) return;
       const [x, y] = at(e), f = Math.exp(Math.max(-3, Math.min(3, e.deltaY / 100)) * 0.15); // 1보다 크면 축소
       if (G.kind === 'map') {
-        if (y > G.mapH) return;
+        if (y > G.mapH && x > G.mapW) return;
         const z = zoomOf(G);
         if (x > G.mapW + G.histW || e.shiftKey) {
           const p = G.hi - y / G.mapH * (G.hi - G.lo); z.lo = p - (p - G.lo) * f; z.hi = p + (G.hi - p) * f;
@@ -433,8 +450,10 @@
       const G = S.geo; if (!G || e.button !== 0) return;
       const [x, y] = at(e);
       if (G.kind === 'price' && y < G.plotT) return;
-      S.drag = { x, y, G: { ...G }, scale: G.kind === 'map' && x > G.mapW + G.histW };
-      box.style.cursor = S.drag.scale ? 'ns-resize' : 'grabbing'; e.preventDefault();
+      // 오른쪽 가격 칸 = 가격 폭, 아래 날짜 칸 = 시간 폭 (오른쪽 끝 고정), 나머지 = 이동
+      const scale = G.kind === 'map' && x > G.mapW + G.histW, tscale = G.kind === 'map' && !scale && y > G.mapH && x <= G.mapW;
+      S.drag = { x, y, G: { ...G }, scale, tscale };
+      box.style.cursor = scale ? 'ns-resize' : tscale ? 'ew-resize' : 'grabbing'; e.preventDefault();
     });
     window.addEventListener('mousemove', e => {
       const d = S.drag; if (!d) return;
@@ -442,6 +461,7 @@
       if (G.kind === 'map') {
         const z = zoomOf(G);
         if (d.scale) { const f = Math.exp(dy * 0.006), mid = (G.lo + G.hi) / 2; z.lo = mid - (mid - G.lo) * f; z.hi = mid + (G.hi - mid) * f; }
+        else if (d.tscale) { z.b = G.b; z.a = G.b - (G.b - G.a) * Math.exp(-dx * 0.006); clampCols(z, G); if (z.lo == null) { z.lo = G.lo; z.hi = G.hi; } }
         else { const dc = -dx / G.mapW * (G.b - G.a), dp = dy / G.mapH * (G.hi - G.lo); z.a = G.a + dc; z.b = G.b + dc; clampCols(z, G); z.lo = G.lo + dp; z.hi = G.hi + dp; }
       } else { const dp = -dx / G.plotW * (G.p1 - G.p0); S.pz = { p0: G.p0 + dp, p1: G.p1 + dp }; }
       redraw();
