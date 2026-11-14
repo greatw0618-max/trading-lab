@@ -116,11 +116,12 @@
   </section>
 
   <section class="panel" id="xcvd" aria-label="거래소별 시장가">
-    <div class="ph"><h2>거래소별 시장가 매수</h2>
+    <div class="ph"><h2>거래소별 시장가 순매수</h2>
       <span class="ph-right"><small id="xcSince"></small>
         <span class="seg" id="xcWin" role="group" aria-label="기간"><button data-v="15m">15분</button><button data-v="1h">1시간</button><button data-v="4h">4시간</button><button data-v="1d">1일</button></span>
       </span>
     </div>
+    <div class="xsum" id="xsum"></div>
     <div class="xgrid">
       <div class="xcol">
         <div class="xhead"><b>현물 · 거래소별 CVD</b><small class="muted">이름을 누르면 선을 켜고 꺼요</small></div>
@@ -138,6 +139,14 @@
       </div>
     </div>
     <p class="note pb" id="xcSrc"></p>
+  </section>
+  <section class="panel" id="ldelta" aria-label="청산 델타">
+    <div class="ph"><h2>청산 델타 <small class="ld-key"><b class="down">빨강</b> = 롱이 더 많음 → 아래가 먹잇감 · <b class="up">초록</b> = 숏이 더 많음 → 위가 먹잇감</small></h2>
+      <span class="seg" id="ldMode" role="group" aria-label="보는 방식"><button data-v="rel">평소 대비 ±5%</button><button data-v="p5">±5%</button><button data-v="p15">전체 ±15%</button></span>
+    </div>
+    <p class="ld-now" id="ldNow"></p>
+    <div class="ld-chart" id="ldChart"></div>
+    <p class="note pb" id="ldNote"></p>
   </section>
   <footer>
     <span>데이터: 바이낸스 선물·현물·코인 마진, 바이비트, 코인베이스 공개 API(브라우저에서 바로), OKX 공개 통계(start-local.bat 서버를 거쳐). 30초마다 갱신.</span>
@@ -292,6 +301,7 @@
 <script src="js/obs.js"></script>
 <script src="js/liqmap.js"></script>
 <script src="js/liqlines.js"></script>
+<script src="js/liqdelta.js"></script>
 <script src="js/claudelink.js"></script>
 </body>
 </html>

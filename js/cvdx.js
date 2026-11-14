@@ -263,15 +263,16 @@
     $('#xcSince').textContent = `${fdt(from)} 이후 · ${X.coin}`;
     // 1일 창은 5분, 그 밖은 1분 단위로 그립니다
     const step = wMin >= 1440 ? 5 * MIN : MIN;
+    const sum = {}; // 위 요약 카드용: 시장별 합계
     ['spot', 'fut'].forEach(m => {
       const leg = $('#xl-' + m); leg.textContent = '';
       const rows = EX[m].map(e => {
         const k = key(m, e.id), b = X.b[k];
-        let net = 0, pts = [], cum = 0, lastT = null;
+        let net = 0, buy = 0, sell = 0, pts = [], cum = 0, lastT = null;
         const st = X.start[k];
         if (b && st != null) {
           const ts = [...b.keys()].filter(t => t >= from).sort((a, z) => a - z);
-          ts.forEach(t => { const v = b.get(t); net += v[0] - v[1]; cum += v[0] - v[1]; const bt = Math.floor(t / step) * step; if (bt !== lastT) { pts.push({ t: bt, v: cum }); lastT = bt; } else pts[pts.length - 1].v = cum; });
+          ts.forEach(t => { const v = b.get(t); buy += v[0]; sell += v[1]; net += v[0] - v[1]; cum += v[0] - v[1]; const bt = Math.floor(t / step) * step; if (bt !== lastT) { pts.push({ t: bt, v: cum }); lastT = bt; } else pts[pts.length - 1].v = cum; });
         }
         const has = b && st != null;
         const partial = has && st > from + 2 * MIN;
@@ -281,7 +282,7 @@
         const btn = el('button', { type: 'button', class: 'xleg' + (X.hidden[k] ? ' off' : ''), title: '눌러서 선 켜기/끄기', onclick: () => { X.hidden[k] = !X.hidden[k]; store.set('xcvdHidden', JSON.stringify(X.hidden)); render(); } },
           el('i', { style: `background:${e.color}` }), e.name + ' ', el('b', { class: has ? toneOf(net) : 'muted', text: has ? amt(net) : '대기 중' }));
         leg.append(btn);
-        return { e, net, has, partial, st };
+        return { e, net, buy, sell, has, partial, st };
       });
       // 기간이나 코인을 바꿨을 때만 전체 기간에 맞춤(그 밖에는 사용자가 확대한 상태 유지)
       const fk = X.coin + X.win; if (C[m].fit !== fk) { C[m].fit = fk; C[m].fitUntil = Date.now() + 90e3; } // 과거 기록이 채워지는 처음 90초 동안은 계속 맞춤
@@ -290,19 +291,40 @@
       const box = $('#xb-' + m); box.textContent = '';
       const valid = rows.filter(r => r.has).sort((a, z) => z.net - a.net);
       const total = valid.reduce((s, r) => s + r.net, 0), max = Math.max(1e-9, ...valid.map(r => Math.abs(r.net)));
+      const vol = valid.reduce((s, r) => s + r.buy + r.sell, 0), buyAll = valid.reduce((s, r) => s + r.buy, 0);
+      sum[m] = { n: valid.length, total, vol, buy: buyAll, sell: vol - buyAll };
       const lead = valid.filter(r => Math.sign(r.net) === Math.sign(total)).sort((a, z) => Math.abs(z.net) - Math.abs(a.net))[0];
       $('#xt-' + m).textContent = '';
       $('#xt-' + m).append(`${valid.length}곳 합산 `, el('b', { class: toneOf(total), text: amt(total) }), ` · ${total >= 0 ? '매수 우위' : '매도 우위'}`);
+      // 표: 거래소 · 막대 · 순매수 · 매수 비율 · 비중(전체 거래량 중 그 거래소 몫)
+      box.append(el('div', { class: 'xrow xhrow' }, el('span'), el('span'), el('span', { class: 'xv', text: '순매수' }), el('span', { class: 'xv', text: '매수' }), el('span', { class: 'xv', text: '비중' })));
+      const pct = (a, b) => b > 0 ? (a / b * 100).toFixed(a / b < 0.01 ? 1 : 0) + '%' : '-';
       valid.forEach(r => {
-        const w = Math.abs(r.net) / max * 50;
+        const w = Math.abs(r.net) / max * 50, v = r.buy + r.sell;
         box.append(el('div', { class: 'xrow' },
           el('span', { class: 'xn' }, r.e.name, lead && r === lead ? el('span', { class: 'chip good', style: 'margin-left:6px', text: '주도' }) : '',
             r.partial ? el('span', { class: 'muted', style: 'font-size:11px;margin-left:6px', text: `${fdt(r.st).slice(6)}부터` }) : ''),
           el('span', { class: 'xbar' }, el('i', { style: r.net >= 0 ? `left:50%;width:${w}%;background:var(--up)` : `right:50%;width:${w}%;background:var(--down)` })),
-          el('span', { class: 'xv m ' + toneOf(r.net), text: amt(r.net) })));
+          el('span', { class: 'xv m ' + toneOf(r.net), text: amt(r.net) }),
+          el('span', { class: 'xv m ' + (r.buy >= r.sell ? 'up' : 'down'), text: pct(r.buy, v) }),
+          el('span', { class: 'xv m muted', text: pct(v, vol) })));
       });
-      rows.filter(r => !r.has).forEach(r => box.append(el('div', { class: 'xrow' }, el('span', { class: 'xn muted', text: r.e.name }), el('span'), el('span', { class: 'xv muted', text: '연결 중' }))));
+      rows.filter(r => !r.has).forEach(r => box.append(el('div', { class: 'xrow' }, el('span', { class: 'xn muted', text: r.e.name }), el('span'), el('span', { class: 'xv muted', text: '연결 중' }), el('span'), el('span'))));
     });
+    // 위 요약 카드: 시장별 순매수·거래량·매수/매도 비율 막대 + 한 줄 판정
+    const card = $('#xsum'); card.textContent = '';
+    const block = (m, name) => {
+      const s = sum[m]; if (!s || !s.n) return el('div', { class: 'xsum-b' }, el('b', { text: name }), el('span', { class: 'muted', text: ' 연결 중' }));
+      const bp = s.vol > 0 ? s.buy / s.vol * 100 : 50;
+      return el('div', { class: 'xsum-b' },
+        el('div', null, el('b', { class: 'xsum-t', text: name }), el('span', { class: 'muted' }, ` ${s.n}곳 · 순매수 `, el('b', { class: 'm ' + toneOf(s.total), text: amt(s.total) }), ` · 거래량 `, el('b', { class: 'm', text: compact(s.vol).replace('+', '') + ' ' + X.coin }))),
+        el('div', { class: 'xsum-bar' }, el('i', { class: 'b', style: `width:${bp}%` }), el('i', { class: 's', style: `width:${100 - bp}%` })),
+        el('div', { class: 'xsum-l m' }, el('span', { class: 'up', text: `매수 ${bp.toFixed(1)}% · ${compact(s.buy).replace('+', '')} ${X.coin}` }), el('span', { class: 'down', text: `매도 ${(100 - bp).toFixed(1)}% · ${compact(s.sell).replace('+', '')} ${X.coin}` })));
+    };
+    const side = s => !s || !s.n ? null : s.total >= 0 ? '매수' : '매도';
+    const sp = side(sum.spot), fu = side(sum.fut);
+    const verdict = sp && fu ? (sp === fu ? `현물·선물 모두 ${sp} 우위` : `현물 ${sp} · 선물 ${fu} 우위 (엇갈림)`) : sp ? `현물 ${sp} 우위` : fu ? `선물 ${fu} 우위` : '자료 모으는 중';
+    card.append(el('div', { class: 'xsum-g' }, block('spot', '현물'), block('fut', '선물')), el('p', { class: 'xsum-v' }, `최근 ${{ '15m': '15분', '1h': '1시간', '4h': '4시간', '1d': '1일' }[X.win]}: `, el('b', { text: verdict })));
     // 출처
     const starts = [...EX.spot.map(e => ['spot', e]), ...EX.fut.map(e => ['fut', e])].map(([m, e]) => { const st = X.start[key(m, e.id)]; return st ? `${e.name}${m === 'fut' ? '(선물)' : ''} ${fdt(st)}` : null; }).filter(Boolean);
     $('#xcSrc').textContent = `기록 시작: ${starts.join(' · ')} · 바이낸스 = 1분봉의 시장가 매수량, 나머지 = 실시간 체결(이 기기에 48시간 보관). 코인베이스·바이빗은 과거 체결을 주지 않아 이 페이지를 연 뒤부터 모입니다. OKX·비트파이넥스의 과거 기록은 컴퓨터(start-local)에서만 채워집니다.`;
