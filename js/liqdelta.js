@@ -72,6 +72,7 @@
         now.append('지금 ', el('b', { class: 'ld-big m ' + toneOf(last.v), text: `${compact(last.v)} ${coin}` }), ' · ',
           el('b', { text: `${rel ? '평소보다 ' : ''}${more} 청산 물량이 ${rel ? '많아요' : '더 많아요'} → ${last.v >= 0 ? '위쪽' : '아래쪽'}이 먹잇감` }),
           el('span', { class: 'muted', text: ` (${fdt(r.updated / 1000)} 청산맵 기준 · 15분마다)` }));
+        const st = U.liqModel.staleText && U.liqModel.staleText(r.updated); if (st) now.append(el('div', { class: 'warn', style: 'font-size:12.5px;margin-top:4px', text: st.replace(' 그 뒤 가격이 지나간 청산가는 바이낸스 가격으로 지웠지만, 그 사이 새로 생긴 포지션은 빠져 있어요.', ' 이 그래프는 그 시점까지만 보여요.') }));
       }
       note.textContent = `${MODES[D.mode]}: ${D.mode === 'p15' ? '현재가 ±15%' : '현재가 ±5%'} 안에 남은 숏 청산 물량 − 롱 청산 물량 (${coin} 수량)${D.mode === 'rel' ? ', 직전 3일 평균을 뺀 값' : ''}. 청산맵과 같은 추정(5개 거래소 OI, 10·25·50·100배, 시장가 매수 비율로 롱/숏 나누기)이라 실제 포지션이 아닙니다. 먹잇감 = 가격이 그쪽으로 가면 청산이 연달아 터질 수 있는 자리라는 뜻이지, 그쪽으로 간다는 예측이 아닙니다.`;
     } catch (e) { now.textContent = e.message; }
