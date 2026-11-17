@@ -240,6 +240,17 @@ tr.hl td { background: var(--accent-soft); }
 .ld-now { margin: 0; padding: 10px 16px 6px; font-size: 13.5px; }
 .ld-big { font-size: 20px; }
 .ld-chart { height: 280px; border-top: 1px solid var(--grid); }
+/* 호가 탭 */
+.bk-sum { display: grid; gap: 4px; }
+.bk-v { font-size: 17px; font-weight: 800; }
+.bk-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0 16px 14px; }
+@media (max-width: 900px) { .bk-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.bk-card { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: var(--panel-2); display: grid; gap: 3px; font-size: 12.5px; min-width: 0; }
+.bk-num { font-size: 20px; font-weight: 800; }
+.bk-chart { height: 300px; border-top: 1px solid var(--grid); }
+.bk-row { display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(4, minmax(0, 1fr)); gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 12.8px; }
+.bk-row .r { text-align: right; }
+.bk-head { font-size: 11.5px; color: var(--muted); }
 
 /* ---------- Claude 연결 (리포트 탭) ---------- */
 .claude-link { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 16px; border-top: 1px solid var(--line); font-size: 12.5px; }
