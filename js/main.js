@@ -182,7 +182,7 @@
     const mk = [];
     if (show.ew && top) top.seq.forEach((p, k) => { if (k > 0) mk.push({ time: times[p.i], position: p.type === 'H' ? 'aboveBar' : 'belowBar', color: cv('--wave'), shape: 'circle', size: 0.5, text: top.labels[k] }); });
     if (show.ict) ict.events.slice(-4).forEach(e => mk.push({ time: times[e.i], position: e.dir > 0 ? 'aboveBar' : 'belowBar', color: cv('--ema1'), shape: 'square', size: 0.3, text: e.kind + (e.dir > 0 ? '↑' : '↓') }));
-    if (show.ict) ict.sweeps.slice(-2).forEach(w => mk.push({ time: times[w.i], position: w.dir > 0 ? 'belowBar' : 'aboveBar', color: cv('--ema1'), shape: w.dir > 0 ? 'arrowUp' : 'arrowDown', size: 0.6, text: '스윕' }));
+    if (show.ict) ict.sweeps.slice(-2).forEach(w => mk.push({ time: times[w.i], position: w.dir > 0 ? 'belowBar' : 'aboveBar', color: cv('--ema1'), shape: w.dir > 0 ? 'arrowUp' : 'arrowDown', size: 0.6, text: (c => `스윕 ${c.ok}/${c.max}`)(sweepCheck(w)) }));
     [1, -1].forEach(dir => {
       const d = show.div && div.find(x => x.dir === dir), [sp, sr] = divSeries[dir];
       if (!d) { sp.setData([]); sr.setData([]); return; }
@@ -256,6 +256,7 @@
     if (e) ex2.append(el('p', { text: `${n - 1 - e.i}봉 전 ${e.kind === 'BOS' ? 'BOS(추세 지속)' : 'CHoCH(추세 전환)'}: 종가가 ${e.dir > 0 ? '직전 고점' : '직전 저점'} ${fp(e.level)}를 ${e.dir > 0 ? '위로' : '아래로'} 돌파했습니다.` }));
     const sw = ict.sweeps.slice(-1)[0];
     if (sw) ex2.append(el('p', { text: sw.dir > 0 ? `${n - 1 - sw.i}봉 전 저점 ${fp(sw.level)} 아래 손절 물량(매도 유동성)을 쓸고 종가가 다시 위로 올라왔습니다. ICT에서 반등 전조로 보는 패턴입니다.` : `${n - 1 - sw.i}봉 전 고점 ${fp(sw.level)} 위 매수 유동성을 쓸고 다시 내려왔습니다. 하락 전조로 보는 패턴입니다.` }));
+    if (sw) { const ck = sweepCheck(sw); ex2.append(el('p', { class: 'muted', style: 'font-size:12.5px', text: `확인 ${ck.ok}/${ck.max}: ${ck.text}${ck.max < 4 && !TA.hasYahoo(S.sym) ? ' (OI·청산맵 확인 중이거나 자료 없음)' : ''}` })); }
     const kv2 = el('dl', { class: 'kv' });
     if (ict.bsl.length) kv2.append(el('dt', { text: '위쪽 유동성 (BSL)' }), el('dd', { text: ict.bsl.map(p => fp(p.p)).join(' · ') }));
     if (ict.ssl.length) kv2.append(el('dt', { text: '아래쪽 유동성 (SSL)' }), el('dd', { text: ict.ssl.map(p => fp(p.p)).join(' · ') }));
@@ -325,9 +326,55 @@
       if (s.t.length < 60) throw new Error(`${S.sym} ${TF_LABEL[S.tf]} 데이터가 부족합니다 (${s.t.length}봉)`);
             S.series = s; S.an = { ew: TA.elliott(s, TA.ewMult[S.tf]), ict: TA.ict(s), wy: TA.wyckoff(s), div: TA.divergence(s) };
       const keep = S.key === key; S.key = key;
+      const cached = sweepCache(S.sym, S.tf, s, S.an.ict);
       drawChart(keep); explain();
       setStatus('ok');
+      if (!cached) enrichSweeps(S.sym, S.tf, s, S.an.ict, id);
     } catch (e) { if (id === S.load) setStatus('err', e.message); }
+  }
+
+  // ---------- 유동성 스윕 추가 확인 (코인만): OI 감소 · 청산맵 추정 청산 ----------
+  // [기본값] OI = 바이낸스 선물 OI가 그 봉 동안 0.3% 이상 줄었나 (손절·청산으로 포지션이 실제로 정리됨)
+  //          청산맵 = 그 봉 동안 청산맵이 추정한 청산 금액이 평소(15분 평균)의 2배 이상인가 (BTC·ETH·SOL·XRP·HYPE)
+  const TF_MS = { '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
+  const LIQ_COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE'];
+  // 확인 결과는 5분 보관 (차트가 15초마다 다시 불러와도 매번 받거나 계산하지 않게)
+  const SWC = new Map(), swKey = (sym, tf, s, w) => `${sym}|${tf}|${s.t[w.i]}|${w.dir}`;
+  function sweepCache(sym, tf, s, ict) {
+    const hit = ict.sweeps.map(w => SWC.get(swKey(sym, tf, s, w)));
+    hit.forEach((c, k) => { if (c) Object.assign(ict.sweeps[k], c.v); });
+    return hit.every(c => c && Date.now() - c.at < 300e3);
+  }
+  async function enrichSweeps(sym, tf, s, ict, id) {
+    if (!ict.sweeps.length || TA.hasYahoo(sym) || !/^[A-Z0-9]+$/.test(sym) || !TF_MS[tf]) return;
+    const dur = TF_MS[tf], jobs = [];
+    jobs.push((async () => {
+      const d = await (await fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${sym}USDT&period=${tf}&limit=500`)).json();
+      if (!Array.isArray(d)) return;
+      const oi = new Map(d.map(x => [+x.timestamp, +x.sumOpenInterest]));
+      ict.sweeps.forEach(w => { const t0 = s.t[w.i] * 1000, a = oi.get(t0), b = oi.get(t0 + dur); if (a && b) { w.oiChg = b / a - 1; w.oi = w.oiChg <= -0.003; } });
+    })().catch(() => {}));
+    if (LIQ_COINS.includes(sym) && TA.ui.liqModel) jobs.push((async () => {
+      const LM = TA.ui.liqModel, d = await LM.loadData(sym);
+      const days = Math.min(60, Math.ceil((Date.now() - s.t[ict.sweeps[0].i] * 1000) / 864e5) + 3);
+      const m = LM.build(d, { ex: new Set(LM.EX.map(e => e[0])), lev: new Set([10, 25, 50, 100]), days, tf: '15m', split: 'taker' });
+      const avg = m.cols.reduce((t, c) => t + c.stat.liq, 0) / (m.cols.length || 1);
+      ict.sweeps.forEach(w => { const t0 = s.t[w.i] * 1000; let sum = 0, k = 0; m.cols.forEach(c => { if (c.t >= t0 && c.t < t0 + dur) { sum += c.stat.liq; k++; } }); if (k && avg > 0) { w.liqX = sum / (avg * k); w.liq = w.liqX >= 2; } });
+    })().catch(() => {}));
+    await Promise.all(jobs);
+    ict.sweeps.forEach(w => SWC.set(swKey(sym, tf, s, w), { at: Date.now(), v: { oiChg: w.oiChg, oi: w.oi, liqX: w.liqX, liq: w.liq } }));
+    if (id === S.load && S.an && S.an.ict === ict) { drawChart(true); explain(); }
+  }
+  // 스윕 확인 조건: 통과 개수와 설명 글 (확인하지 못한 조건은 세지 않음)
+  function sweepCheck(w) {
+    const parts = [
+      `${w.size ? '✔' : '✘'} 깬 폭·꼬리 (ATR의 ${w.depthAtr.toFixed(2)}배, 꼬리 ${Math.round(w.wickPct * 100)}%)`,
+      w.vol != null ? `${w.vol ? '✔' : '✘'} 거래량 평소의 ${w.volX.toFixed(1)}배` : null,
+      w.oi != null ? `${w.oi ? '✔' : '✘'} OI ${w.oiChg > 0 ? '+' : ''}${(w.oiChg * 100).toFixed(2)}%` : null,
+      w.liq != null ? `${w.liq ? '✔' : '✘'} 청산맵 추정 청산 평소의 ${w.liqX.toFixed(1)}배` : null
+    ].filter(Boolean);
+    const keys = ['size', 'vol', 'oi', 'liq'].filter(k => w[k] != null);
+    return { ok: keys.filter(k => w[k]).length, max: keys.length, text: parts.join(' · ') };
   }
 
   // ---------- 방향성 점검표 ----------
@@ -496,7 +543,7 @@
       `${x.target != null ? ' · 다음 목표 ' + fp(x.target) : ''}${x.targetNote ? ' (' + x.targetNote + ')' : ''}${x.zone ? ' · 구간 ' + fp(x.zone[0]) + '~' + fp(x.zone[1]) : ''}${x.invalid != null ? ' · 무효화 ' + fp(x.invalid) : ''} · 해석: ${x.dip[1]}`));
     L.push('', `[ICT] ${ict.trend > 0 ? '상승' : ict.trend < 0 ? '하락' : '불분명'} 구조`);
     ict.events.slice(-4).forEach(e => L.push(`- ${e.kind}${e.dir > 0 ? '↑' : '↓'} ${fdt(s.t[e.i])} 기준가 ${fp(e.level)}`));
-    ict.sweeps.slice(-3).forEach(w => L.push(`- 유동성 스윕(${w.dir > 0 ? '저점 아래' : '고점 위'}) ${fdt(s.t[w.i])} 레벨 ${fp(w.level)}`));
+    ict.sweeps.slice(-3).forEach(w => { const ck = sweepCheck(w); L.push(`- 유동성 스윕(${w.dir > 0 ? '저점 아래' : '고점 위'}) ${fdt(s.t[w.i])} 레벨 ${fp(w.level)} · 확인 ${ck.ok}/${ck.max} (${ck.text})`); });
     if (ict.bsl.length) L.push('- 위쪽 유동성(BSL): ' + ict.bsl.map(p => fp(p.p)).join(', '));
     if (ict.ssl.length) L.push('- 아래쪽 유동성(SSL): ' + ict.ssl.map(p => fp(p.p)).join(', '));
     ict.fvgs.forEach(g => L.push(`- ${g.dir > 0 ? '상승' : '하락'} FVG ${fp(g.bot)}~${fp(g.top)}`));

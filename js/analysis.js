@@ -36,14 +36,26 @@
     const ssl = intactL.filter(p => p.p < c).sort((x, y) => y.p - x.p).slice(0, 3);
 
     // 유동성 스윕: 최근 12봉 안에서 이전 고점/저점을 꼬리로 깨고 종가는 다시 안쪽으로 들어온 봉
+    // 확인 조건 (봉으로 볼 수 있는 것, [기본값]):
+    //  size = 깬 폭이 ATR의 0.1배 이상이고 꼬리가 봉 전체 길이의 50% 이상 (살짝 닿기만 한 것은 거름)
+    //  vol  = 그 봉 거래량이 직전 20봉 평균의 1.5배 이상 (손절·청산이 실제로 터졌다는 흔적)
+    //  OI 감소·청산맵 물량은 봉 자료에 없어 화면(main.js)에서 코인만 따로 확인합니다.
     const sweeps = [];
+    const sweepChecks = (i, dir, level) => {
+      const range = s.h[i] - s.l[i] || 1e-9, A = atr[i] || a;
+      const wick = dir > 0 ? Math.min(s.o[i], s.c[i]) - s.l[i] : s.h[i] - Math.max(s.o[i], s.c[i]);
+      const depth = dir > 0 ? level - s.l[i] : s.h[i] - level;
+      let vs = 0, vn = 0; if (s.v) for (let q = Math.max(0, i - 20); q < i; q++) { vs += s.v[q] || 0; vn++; }
+      const va = vn ? vs / vn : 0, volX = va > 0 && s.v[i] ? s.v[i] / va : null;
+      return { depthAtr: depth / A, wickPct: wick / range, volX, size: depth >= A * 0.1 && wick >= range * 0.5, vol: volX != null ? volX >= 1.5 : null };
+    };
     for (let i = Math.max(1, n - 12); i < n; i++) {
       const prevL = lows.filter(p => p.conf < i && p.i >= i - 80);
       const prevH = highs.filter(p => p.conf < i && p.i >= i - 80);
       const sl = prevL.filter(p => s.l[i] < p.p && s.c[i] > p.p).sort((x, y) => x.p - y.p)[0];
       const sh = prevH.filter(p => s.h[i] > p.p && s.c[i] < p.p).sort((x, y) => y.p - x.p)[0];
-      if (sl) sweeps.push({ i, dir: 1, level: sl.p });
-      if (sh) sweeps.push({ i, dir: -1, level: sh.p });
+      if (sl) sweeps.push({ i, dir: 1, level: sl.p, ...sweepChecks(i, 1, sl.p) });
+      if (sh) sweeps.push({ i, dir: -1, level: sh.p, ...sweepChecks(i, -1, sh.p) });
     }
 
     // FVG(공정가치 갭): 3봉 사이에 비어 있는 가격대. 다시 채워지지 않은 것만.
